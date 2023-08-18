@@ -452,7 +452,8 @@ class SIM2REALTrainer(BaseTrainer):
                         actions.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))
                     actions = np.stack(actions)  # [agent, intersections]
                     actions_prob = []
-                    for idx, ag in enumerate(self.agents_sim):
+                    for idx, ag in enumerate(self.agents_sim): # now it is single agent. so directly used the output uncertainty
+                        # if multiple agents, please consider adjustment
                         actions_prob.append(ag.get_action_prob(last_obs[idx], last_phase[idx]))
 
                         s_prime = []
