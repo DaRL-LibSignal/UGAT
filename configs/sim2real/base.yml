@@ -35,7 +35,6 @@ trainer:
   inverse_type: 'UNCERTAINTY' # or 'NN
   experiment_mode: 'restart'
 
-
 model:
   name: "non-rl"
 
