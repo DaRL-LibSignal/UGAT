@@ -10,7 +10,7 @@ from common.registry import Registry
 from trainer.base_trainer import BaseTrainer
 
 from common import interface
-from common.stat_utils import NN_predictor, Alpha_net, UNCERTAINTY_predictor
+from common.stat_utils import NN_predictor, UNCERTAINTY_predictor
 from agent.utils import idx2onehot
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -206,16 +206,16 @@ class SIM2REALTrainer(BaseTrainer):
         V = []
         for e in range(self.episodes):
             self.load_pretrained(path)  # load both on the sim and real
-            # self.sim_rollout(e-1)
+            # first rollout
             R = self.real_rollout(e - 1)
             self.sim_rollout(e - 1)
             V.append(R)
+            # train forward model
             self.forward_train(writer=self.writer)
-            # get the uncertainty value from inverse training
-            uncertainty_list = self.inverse_train(writer=self.writer)
-            # mean_uncer = torch.Tensor(np.array(np.mean(uncertainty_list)))
+            # train inverse model
+            _ = self.inverse_train(writer=self.writer)
+            # sim2real training
             path = self.sim_tain(episode=20, e=e, writer=self.writer)
-            # self.alpha *= 0.95
 
         self.load_pretrained(path)
         R = self.real_eval(e)
@@ -483,8 +483,8 @@ class SIM2REALTrainer(BaseTrainer):
                             epoch_distribution.append(distribution)
                             epoch_uncertainty.append(uncertainty)
 
-                    if uncertainty.detach().numpy()[0] < np.array(1): #self.alpha
-                    # if uncertainty.detach().numpy()[0] < self.alpha: #self.alpha
+                    # if uncertainty.detach().numpy()[0] < np.array(1): #self.alpha
+                    if uncertainty.detach().numpy()[0] < self.alpha: #self.alpha
                         # take grounding action
 
                         rewards_list = []

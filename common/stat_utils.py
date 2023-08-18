@@ -156,37 +156,15 @@ class UNCERTAINTY_predictor(object):
                 # standard loss
                 standard_loss = self.criterion(y_pred, y_true)
 
-                global_step = torch.tensor(0)
-                annealing_step = 10 * self.batch_size
-
-                # EDL loss
-                # generated_loss = torch.mean(loss_EDL(y_pred, alpha_val, global_step, annealing_step))
-
                 # classic_loss
                 generated_loss = loss_v2(y_pred, y_true)
-                # print(generated_loss)
-
-                # loss = standard_loss + loss_EDL_result + l2_loss
-                # loss = standard_loss + loss_EDL_result + l2_loss
 
                 # ablation study:
                 loss = standard_loss + generated_loss + l2_loss  # v_original
-                # loss = standard_loss + generated_loss    # v_step1, remove l2_loss: (regularizer)
 
-                # print(loss)
-                # add the quantile loss
-                # if self.backward:
-                    # quantile_value = quantile_loss(y_pred, y_true)
-                    
-                #     record_quantile.append(quantile_value.detach().numpy())
-                # else: 
-                #     loss = self.criterion(y_pred, y_true)
-                # loss = QuantileLoss()
                 loss.backward()
                 self.optimizer.step()
                 train_loss += loss.item()
-            # if self.backward:
-            #     epoch_quantiles.append(np.mean(record_quantile))
  
             if e == 0:
                 ave_loss = train_loss/ len(train_dataset)
@@ -223,9 +201,7 @@ class UNCERTAINTY_predictor(object):
             # print("uncertainty now is:"+str(uncertainty))
             # return the uncertainty if inverse:
             return uncertainty
-        # import matplotlib.pyplot as plt
-        # plt.scatter(np.arange(len(epoch_quantiles)), epoch_quantiles)
-        # plt.show()
+
     
     def test(self, e, txt):
         test_loss = 0.0
@@ -322,8 +298,6 @@ class NN_predictor(object):
         
         self.history = history
         self.batch_size = 64
-        # self.optimizer = optim.SGD(self.model.parameters(), lr=self.learning_rate, momentum=0.9)
-        # self.online_optimizer = optim.SGD(self.model.parameters(), lr=self.learning_rate * 0.1, momentum=0.9)
         self.optimizer = optim.Adam(params=self.model.parameters(), lr=self.learning_rate, betas=(0.9, 0.99))
         self.online_optimizer = optim.Adam(params=self.model.parameters(), lr=self.learning_rate, betas=(0.9, 0.99))
         self.model_dir = model_dir
@@ -334,16 +308,6 @@ class NN_predictor(object):
         self.y_train = None
         self.x_val = None
         self.y_val = None
-
-        # train_data = generate_forward_dataset('collected/train.pkl', backward=self.backward)
-        # self.x_train = train_data['x_train']
-        # self.x_val = train_data['x_val']
-        # self.y_train = train_data['y_train']
-        # self.y_val = train_data['y_val']
-
-        # test_data = generate_forward_dataset('collected/test.pkl',backward=self.backward)
-        # self.x_test = test_data['x_val']
-        # self.y_test = test_data['y_val']
 
     def load_dataset(self):
         train_data = generate_forward_dataset(self.data_dir, backward=self.backward, history=self.history)
@@ -391,20 +355,11 @@ class NN_predictor(object):
                 result = self.model(x)
                 y_pred, u = result[0], result[1]
                 loss = self.criterion(y_pred, y_true)
-                # add the quantile loss
-                # if self.backward:
-                #     quantile_value = quantile_loss(y_pred, y_true)
-                    
-                #     record_quantile.append(quantile_value.detach().numpy())
-                # else: 
-                #     loss = self.criterion(y_pred, y_true)
-                # loss = QuantileLoss()
+
                 loss.backward()
                 self.optimizer.step()
                 train_loss += loss.item()
-            # if self.backward:
-            #     epoch_quantiles.append(np.mean(record_quantile))
- 
+
             if e == 0:
                 ave_loss = train_loss/ len(train_dataset)
                 self.logger.info(f'epoch {e}: {txt} train average loss {ave_loss}.')
@@ -526,13 +481,6 @@ class LSTMPredictor(nn.Module):
         output = self.dense_4(h_t2)  # input the hidden state, and output the prediction
         output = self.dense_5(output)  # input the hidden state, and output the prediction
         output = self.linear(output)  # input the hidden state, and output the prediction
-            # outputs.append(output)
-
-        # for i in range(future):
-        #     h_t, c_t = self.lstm1(output, (h_t, c_t))
-        #     h_t2, c_t2 = self.lstm2(h_t, (h_t2, c_t2))
-        #     output = self.linear(h_t2)  # input the hidden state, and output the prediction
-        #     outputs.append(output)
 
         # outputs = torch.cat(outputs, dim=1)
         return output
