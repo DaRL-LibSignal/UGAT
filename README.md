@@ -26,3 +26,17 @@ Probably you will not need to check the logs in this repo if for learning the GA
 one time of execution under the folder of: `Sim2Real_TSC/data/output_data/sim2real`. But by defauly, if you execute a second time, the last data will be overwrite.
 To visualize the learning process: please consider using the script vis.ipynb by providing the path to a file ends with BRF.log: log_file='xxxBRF.log'
 
+
+
+
+## Cite:
+If you find this paper helpful, please cite us:
+```
+@article{da2023uncertainty,
+  title={Uncertainty-aware Grounded Action Transformation towards Sim-to-Real Transfer for Traffic Signal Control},
+  author={Da, Longchao and Mei, Hao and Sharma, Romir and Wei, Hua},
+  journal={arXiv preprint arXiv:2307.12388},
+  year={2023}
+}
+```
+
