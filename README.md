@@ -32,11 +32,13 @@ To visualize the learning process: please consider using the script vis.ipynb by
 ## Cite:
 If you find this paper helpful, please cite us:
 ```
-@article{da2023uncertainty,
+@inproceedings{da2023uncertainty,
   title={Uncertainty-aware Grounded Action Transformation towards Sim-to-Real Transfer for Traffic Signal Control},
   author={Da, Longchao and Mei, Hao and Sharma, Romir and Wei, Hua},
-  journal={arXiv preprint arXiv:2307.12388},
-  year={2023}
+  booktitle={2023 62nd IEEE Conference on Decision and Control (CDC)},
+  pages={1124--1129},
+  year={2023},
+  organization={IEEE}
 }
 ```
 
