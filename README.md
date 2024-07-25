@@ -14,6 +14,14 @@
 `python sim2real.py`
 
 
+## At the same time of using this Docker Image, you have the the readily prepared LibSignal
+This is a multi-simulator supported framework, provide easy-to-configure settings for sim-to-sim simulated sim-to-real training and testing.
+For details, please visit: https://darl-libsignal.github.io/
+
+
+Another sim-to-real in Traffic Signal Control work **prompt-to-transfer (AAAI24)** is also based on this repo codebase: 
+https://ojs.aaai.org/index.php/AAAI/article/view/27758
+
 
 ## Instructions:
 
