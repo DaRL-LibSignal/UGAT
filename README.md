@@ -65,6 +65,8 @@ one time of execution under the folder of: `Sim2Real_TSC/data/output_data/sim2re
 To visualize the learning process: please consider using the script vis.ipynb by providing the path to a file ends with BRF.log: log_file='xxxBRF.log'
 
 
+> Thanks Awesome Romir Sharma for helping creating the docker and make it easy to use!
+
 
 
 ## Cite:
