@@ -5,22 +5,39 @@
 ## 🚀 🚀 🚀
 ## We have created a docker image for your convenience to use this code base!
 
+This docker code base contains three projects, first pull from docker hub: 
+
 `docker pull danielda1/ugat:latest`
 
 `docker run -it --name ugat_case danielda1/ugat:latest`
 
+For this repo's paper:  CDC23: Uncertainty-aware Grounded Action Transformation towards Sim-to-Real Transfer for Traffic Signal Control
+
 `cd /DaRL/UGAT_Docker/`
 
 `python sim2real.py`
-
 
 ## At the same time of using this Docker Image, you have the the readily prepared LibSignal
 This is a multi-simulator supported framework, provide easy-to-configure settings for sim-to-sim simulated sim-to-real training and testing.
 For details, please visit: https://darl-libsignal.github.io/
 
 
-Another sim-to-real in Traffic Signal Control work **prompt-to-transfer (AAAI24)** is also based on this repo codebase: 
-https://ojs.aaai.org/index.php/AAAI/article/view/27758
+For LibSignal - Then go to the terminal: 
+
+`cd /DaRL/LibSignal`
+
+`python run.py`
+
+
+## We have also included another sim-to-real for RL - TSC tasks:  
+
+> AAAI24: Prompt to Transfer: Sim-to-Real Transfer for Traffic Signal Control with Prompt Learning (https://github.com/DaRL-LibSignal/PromptGAT)
+
+Stay in the same docker environment, go to command line:
+
+`cd /DaRL/PromptGAT`
+
+`python sim2real.py`
 
 
 ## Instructions:
