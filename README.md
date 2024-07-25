@@ -2,6 +2,19 @@
 # Uncertainty-Aware Grounded Action Transformation for Sim2Real_TSC
 
 
+## 🚀 🚀 🚀
+## We have created a docker image for your convenience to use this code base!
+
+`docker pull danielda1/ugat:latest`
+
+`docker run -it --name ugat_case danielda1/ugat:latest`
+
+`cd /DaRL/UGAT_Docker/`
+
+`python sim2real.py`
+
+
+
 ## Instructions:
 
 1. For prepartion: 
