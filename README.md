@@ -49,6 +49,24 @@ Check the doc for help: https://darl-libsignal.github.io/
 2. For running and starting:
 After successfully installed all the requirement, consider starting the training by simply running sim2real.py
 
+> Please note, if you want to change the configs settings in `real`, please open the file at location:
+`/DaRL/UGAT_Docker/data/raw_data/hangzhou_1x1_bc-tyc_18041610_1h/hangzhou_1x1_bc-tyc_18041610_1h.rou.xml`
+
+And then you should be able to see the following settings, please in-annotate the one that you want to experiment with:
+
+```
+<!-- v1:lighter -->
+<!-- <vType accel="1.0" decel="2.5" emergencyDecel='6.0' startupDelay='0.5' id="pkw" length="5.0" maxSpeed="11.111" minGap="2.5" width="2.0"/> -->
+<!-- v2:heavier -->
+<!-- <vType accel="1.0" decel="2.5" emergencyDecel='6.0' startupDelay='0.75' id="pkw" length="5.0" maxSpeed="11.111" minGap="2.5" width="2.0"/> -->
+<!-- v3:rain -->
+<vType accel="0.75" decel="3.5" emergencyDecel='6.0' startupDelay='0.25'  id="pkw" length="5.0" maxSpeed="11.111" minGap="2.5" width="2.0"/>
+<!-- v4:snow -->
+<!-- <vType accel="0.5" decel="1.5" emergencyDecel='2.0' startupDelay='0.5' id="pkw" length="5.0" maxSpeed="11.111" minGap="2.5" width="2.0"/> -->
+
+```
+
+
 3. For debugging, please make sure all the files are correctly imported
 Please focus on the sim2real_trainer.py line 207-220. This is the outline of the GAT model.
 
