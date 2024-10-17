@@ -40,6 +40,19 @@ Stay in the same docker environment, go to command line:
 `python sim2real.py`
 
 
+## Approximate runtime for UGAT:
+
+Using GPU: NVIDIA GeForce RTX 4090
+
+30 epochs with GPU takes approximately 30 minutes (~1 min per epoch)
+
+
+Using CPU: Intel(R) Core(TM) i9-14900K
+
+30 epochs with CPU in docker container takes approximately 9 hours and 30 minutes (~19 min per epoch)
+
+
+
 ## Instructions:
 
 1. For prepartion: 
