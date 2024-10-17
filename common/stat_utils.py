@@ -145,8 +145,8 @@ class UNCERTAINTY_predictor(object):
             for i, data in enumerate(train_loader):
                 x, y_true = data
                 self.optimizer.zero_grad()
-                x.to(self.DEVICE)
-                y_true.to(self.DEVICE)
+                x = x.to(self.DEVICE)
+                y_true = y_true.to(self.DEVICE)
                 result  = self.model(x)
                 y_pred, uncertainty = result[0], result[1]
 
@@ -210,8 +210,8 @@ class UNCERTAINTY_predictor(object):
         with no_grad():
             for i, data in enumerate(test_loader):
                 x, y_true = data
-                x.to(self.DEVICE)
-                y_true.to(self.DEVICE)
+                x = x.to(self.DEVICE)
+                y_true = y_true.to(self.DEVICE)
                 result = self.model(x)
                 y_pred, uncertainty = result[0], result[1]
                 # print(y_pred)
@@ -230,8 +230,8 @@ class UNCERTAINTY_predictor(object):
         with no_grad():
             for i, data in enumerate(test_loader):
                 x, y_true = data
-                x.to(self.DEVICE)
-                y_true.to(self.DEVICE)
+                x = x.to(self.DEVICE)
+                y_true = y_true.to(self.DEVICE)
                 result = self.model(x)
                 y_pred, uncertainty = result[0], result[1]
 
@@ -288,7 +288,7 @@ class NN_predictor(object):
         self.backward = backward
         self.make_model()
         self.DEVICE = DEVICE
-        self.model.to(DEVICE).float()
+        self.model.to(self.DEVICE).float()
         if not backward:
             self.criterion = nn.MSELoss()
             self.learning_rate = 0.0001
@@ -350,8 +350,8 @@ class NN_predictor(object):
             for i, data in enumerate(train_loader):
                 x, y_true = data
                 self.optimizer.zero_grad()
-                x.to(self.DEVICE)
-                y_true.to(self.DEVICE)
+                x = x.to(self.DEVICE)
+                y_true = y_true.to(self.DEVICE)
                 result = self.model(x)
                 y_pred, u = result[0], result[1]
                 loss = self.criterion(y_pred, y_true)
@@ -408,8 +408,8 @@ class NN_predictor(object):
         with no_grad():
             for i, data in enumerate(test_loader):
                 x, y_true = data
-                x.to(self.DEVICE)
-                y_true.to(self.DEVICE)
+                x = x.to(self.DEVICE)
+                y_true = y_true.to(self.DEVICE)
                 y_pred, uncertainty = self.model(x)
                 loss = self.criterion(y_pred, y_true)
                 test_loss += loss.item()
@@ -628,6 +628,12 @@ class Inverse_N_net(nn.Module):
 
         W_4_EDL_layer = self.dense_4.weight
         W_end_EDL_layer = self.EDL_layer.weight
+
+        # Added to move calculations to GPU device
+        DEVICE = 'cuda:0'
+        
+        self.lmb = self.lmb.to(DEVICE)
+
         # B_EDL_layer = self.EDL_layer.bias
         l2_loss = (l2_penalty(W_4_EDL_layer)+l2_penalty(W_end_EDL_layer)) * self.lmb
 
@@ -676,12 +682,18 @@ class N_net(nn.Module):
 
         # global_step = tf.Variable(initial_value=0, name='global_step', trainable=False)
         
+        # Added to move to GPU device for computation speed
+        DEVICE = 'cuda:0'
 
         # uncertainty:
         K = 8 # how many classes in there?
         W4 = var_torch([20, K])
         b4 = var_torch([K])
         out3 = torch.clone(x)
+
+        W4 = W4.to(DEVICE)
+        b4 = b4.to(DEVICE)
+
         logits = torch.matmul(out3, W4) + b4
         evidence = relu_evidence(logits)
         alpha = evidence + 1
@@ -699,7 +711,7 @@ class N_net(nn.Module):
 def generate_forward_dataset(file, action=8, backward=False, history=1):
     with open(file, 'rb') as f:
         contents = pkl.load(f)
-
+        
     feature = list()
     target = list()
     if backward:

@@ -12,4 +12,5 @@ data/raw_data/grid4x4/*.pdf
 history_save/
 soft/
 collected/
-.zshrc
+.zshrc.venv/
+CityFlow

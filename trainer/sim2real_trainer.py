@@ -128,6 +128,7 @@ class SIM2REALTrainer(BaseTrainer):
             self.world_sim, 0)
 
         num_agent = int(len(self.world_sim.intersections) / agent_sim.sub_agents)
+        print(f"Total number of agents: {num_agent}, Total number of sub agents: {agent_sim.sub_agents}")
         self.agents_sim.append(agent_sim)  # initialized N agents for traffic light control
         for i in range(1, num_agent):
             self.agents_sim.append(
@@ -167,6 +168,8 @@ class SIM2REALTrainer(BaseTrainer):
         self.model_path = os.path.join(self.root_path, Registry.mapping['logger_mapping']['setting'].param['model_dir'])
         self.data_path = os.path.join(self.root_path, Registry.mapping['logger_mapping']['setting'].param['data_dir'])
         self.debug_path = os.path.join(self.root_path, 'debug')
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
         if not os.path.exists(self.model_path):
             os.mkdir(self.model_path)
         if not os.path.exists(self.data_path):
@@ -178,20 +181,20 @@ class SIM2REALTrainer(BaseTrainer):
             # TODO: support multiple intersections
             self.forward_model = NN_predictor(self.logger,
                                               (self.agents_real[0].ob_generator.ob_length + self.agents_real[0].action_space.n) * self.HISTORY_T,
-                                              self.agents_real[0].ob_generator.ob_length, 'cpu', self.model_path,
+                                              self.agents_real[0].ob_generator.ob_length, device, self.model_path,
                                               self.data_path + 'real.pkl', history=self.HISTORY_T)
             self.inverse_model = NN_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * 2,
-                                              self.agents_real[0].action_space.n, 'cpu', self.model_path,
+                                              self.agents_real[0].action_space.n, device, self.model_path,
                                               self.data_path + 'sim.pkl', backward=True)
             # pretrain model and load pretrained ones
         elif self.INVERSE == 'UNCERTAINTY':
 
             self.forward_model = NN_predictor(self.logger,
                                             (self.agents_real[0].ob_generator.ob_length + self.agents_real[0].action_space.n) * self.HISTORY_T,
-                                            self.agents_real[0].ob_generator.ob_length, 'cpu', self.model_path,
+                                            self.agents_real[0].ob_generator.ob_length, device, self.model_path,
                                             self.data_path + 'real.pkl', history=self.HISTORY_T)
             self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * 2,
-                                            self.agents_real[0].action_space.n, 'cpu', self.model_path,
+                                            self.agents_real[0].action_space.n, device, self.model_path,
                                             self.data_path + 'sim.pkl', backward=True)
         
         #'pretrained'/'restart'
@@ -462,30 +465,48 @@ class SIM2REALTrainer(BaseTrainer):
 
                         s_prime.append(self.forward_model.predict(torch.from_numpy(seq[:, -input_size :]).float())[0])
                         grounding_actions = []
-                        inverse_input = torch.cat((torch.from_numpy(last_obs[0]), s_prime[0]), dim=1).float()
+
+                        last_obs_tensor = torch.from_numpy(last_obs[0]).to(self.device).float()
+                        s_prime_tensor = s_prime[0].to(self.device)
+
+                        inverse_input = torch.cat((last_obs_tensor, s_prime_tensor), dim=1).float()
 
                         if self.INVERSE == 'NN':
                             logit_distribution, uncertainty = self.inverse_model.predict(inverse_input) #uncertainty is just holding a place here, not actually working
                             distribution = F.softmax(logit_distribution)
 
-                            action_max = np.array(np.argmax(logit_distribution.to('cpu').numpy()))
+                            action_max = np.array(np.argmax(logit_distribution.to(self.device).numpy()))
                             grounding_actions.append([np.array(action_max)])
                             grounding_actions = np.stack(grounding_actions)
                             epoch_diff.append([actions[0][0], grounding_actions[0][0]])
-                            epoch_distribution.append(distribution.to('cpu').numpy())
+                            epoch_distribution.append(distribution.to(self.device).numpy())
                         elif self.INVERSE =='UNCERTAINTY':
                             logit_distribution, uncertainty = self.inverse_model.predict(inverse_input)
                             distribution = F.softmax(logit_distribution)
-                            action_max = np.array(np.argmax(logit_distribution.to('cpu').numpy()))
+
+                            # Changed action max to GPU
+                            action_max = torch.argmax(logit_distribution).to(self.device)
+
                             # distribution, action_max, uncertainty = self.inverse_model.predict(inverse_input)
-                            grounding_actions.append([np.array(action_max)])
-                            grounding_actions = np.stack(grounding_actions)
-                            epoch_diff.append([actions[0][0], grounding_actions[0][0]])
+
+                            #grounding_actions.append([np.array(action_max)])
+                            grounding_actions.append(action_max.clone().detach())  # Remove the list brackets
+
+                            #grounding_actions = np.stack(grounding_actions)
+                            grounding_actions = torch.stack(grounding_actions)
+
+                            
+                            #epoch_diff.append([actions[0][0], grounding_actions[0][0]])
+                            epoch_diff.append([actions.item(), grounding_actions.item()])
+
+
+
                             epoch_distribution.append(distribution)
                             epoch_uncertainty.append(uncertainty)
 
                     # if uncertainty.detach().numpy()[0] < np.array(1): #self.alpha
-                    if uncertainty.detach().numpy()[0] < self.alpha: #self.alpha
+                    #if uncertainty.detach().numpy()[0] < self.alpha: #self.alpha
+                    if uncertainty.detach().item() < self.alpha:
                         # take grounding action
 
                         rewards_list = []
@@ -546,7 +567,9 @@ class SIM2REALTrainer(BaseTrainer):
             action_distribution.append(epoch_distribution)
 
             if self.INVERSE == 'UNCERTAINTY':
-                temp = np.vstack(epoch_uncertainty).flatten().mean()
+                #temp = np.vstack(epoch_uncertainty).flatten().mean()
+                temp = torch.vstack(epoch_uncertainty).flatten().mean().item()
+
                 action_uncertainty.append(temp)
 
             elif self.INVERSE == 'NN':

@@ -13,10 +13,12 @@ import argparse
 
 import sys
 
+import torch
+
 # parseargs
 parser = argparse.ArgumentParser(description='Run Experiment')
 parser.add_argument('--thread_num', type=int, default=8, help='number of threads')  # used in cityflow
-parser.add_argument('--ngpu', type=str, default="-1", help='gpu to be used')  # choose gpu card
+parser.add_argument('--ngpu', type=str, default="0", help='gpu to be used')  # choose gpu card
 parser.add_argument('--prefix', type=str, default='report', help="the number of prefix in this running process")
 parser.add_argument('--seed', type=int, default=None, help="seed for pytorch backend")
 parser.add_argument('--debug', type=bool, default=False)
@@ -34,6 +36,15 @@ parser.add_argument('-d', '--dataset', type=str, default='onfly', help='type of 
 
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.ngpu
+
+
+if torch.cuda.is_available():
+    num_gpus = torch.cuda.device_count()
+    print(f"Number of GPUs available: {num_gpus}")
+    for i in range(num_gpus):
+        print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+else:
+    print("No GPUs available. Running on CPU.")
 
 logging_level = logging.INFO
 if args.debug:
@@ -89,5 +100,12 @@ class Runner:
 if __name__ == '__main__':
     test = Runner(args)
 
-    test.run()
+    # Start timer
+    start_time = time.time()
 
+    try:
+        test.run()
+    finally:
+        # Calculate and print elapsed time
+        elapsed_time = time.time() - start_time
+        print(f"elapsed_time: {elapsed_time}")
