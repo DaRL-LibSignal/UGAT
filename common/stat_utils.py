@@ -62,8 +62,18 @@ def write_action_record(path, record, struc, fix_time=30):
 class NN_dataset(Dataset):
     def __init__(self, feature, target):
         self.len = len(feature)
-        self.features = torch.from_numpy(feature).float()
-        self.target = torch.from_numpy(target).float()
+        
+        # Convert feature to Tensor if it's not already
+        if isinstance(feature, np.ndarray):
+            self.features = torch.from_numpy(feature).float()
+        else:
+            self.features = feature.float()
+
+        # Convert target to Tensor if it's not already
+        if isinstance(target, np.ndarray):
+            self.target = torch.from_numpy(target).float()
+        else:
+            self.target = target.float()
 
     def __getitem__(self, idx):
         return self.features[idx, :], self.target[idx]
@@ -106,20 +116,22 @@ class UNCERTAINTY_predictor(object):
 
     def load_dataset(self):
         train_data = generate_forward_dataset(self.data_dir, backward=self.backward, history=self.history)
+        
         # train val split
         split_point = int(train_data['x_train'].shape[0] * 0.8)
-        # shuffled when create
+
+        # Move data to GPU
         if self.x_train is not None:
-            self.x_train = np.concatenate((self.x_train, train_data['x_train'][: split_point]))
-            self.y_train = np.concatenate((self.y_train, train_data['y_train'][: split_point]))
-            self.x_val = np.concatenate((self.x_val, train_data['x_train'][split_point :]))
-            self.y_val = np.concatenate((self.y_val, train_data['y_train'][split_point :]))     
-        else:       
-            self.x_train = train_data['x_train'][: split_point]
-            self.y_train = train_data['y_train'][: split_point]
-            self.x_val = train_data['x_train'][split_point :]
-            self.y_val = train_data['y_train'][split_point :]
-        
+            self.x_train = torch.cat((self.x_train, torch.tensor(train_data['x_train'][:split_point], device=self.DEVICE)))
+            self.y_train = torch.cat((self.y_train, torch.tensor(train_data['y_train'][:split_point], device=self.DEVICE)))
+            self.x_val = torch.cat((self.x_val, torch.tensor(train_data['x_train'][split_point:], device=self.DEVICE)))
+            self.y_val = torch.cat((self.y_val, torch.tensor(train_data['y_train'][split_point:], device=self.DEVICE)))
+        else:
+            self.x_train = torch.tensor(train_data['x_train'][:split_point], device=self.DEVICE)
+            self.y_train = torch.tensor(train_data['y_train'][:split_point], device=self.DEVICE)
+            self.x_val = torch.tensor(train_data['x_train'][split_point:], device=self.DEVICE)
+            self.y_val = torch.tensor(train_data['y_train'][split_point:], device=self.DEVICE)
+
         # shuffle in dataloader
         print('dataset batch size: ', self.y_train.shape[0])
 
@@ -311,20 +323,22 @@ class NN_predictor(object):
 
     def load_dataset(self):
         train_data = generate_forward_dataset(self.data_dir, backward=self.backward, history=self.history)
+        
         # train val split
         split_point = int(train_data['x_train'].shape[0] * 0.8)
-        # shuffled when create
+
+        # Move data to GPU
         if self.x_train is not None:
-            self.x_train = np.concatenate((self.x_train, train_data['x_train'][: split_point]))
-            self.y_train = np.concatenate((self.y_train, train_data['y_train'][: split_point]))
-            self.x_val = np.concatenate((self.x_val, train_data['x_train'][split_point :]))
-            self.y_val = np.concatenate((self.y_val, train_data['y_train'][split_point :]))     
-        else:       
-            self.x_train = train_data['x_train'][: split_point]
-            self.y_train = train_data['y_train'][: split_point]
-            self.x_val = train_data['x_train'][split_point :]
-            self.y_val = train_data['y_train'][split_point :]
-        
+            self.x_train = torch.cat((self.x_train, torch.tensor(train_data['x_train'][:split_point], device=self.DEVICE)))
+            self.y_train = torch.cat((self.y_train, torch.tensor(train_data['y_train'][:split_point], device=self.DEVICE)))
+            self.x_val = torch.cat((self.x_val, torch.tensor(train_data['x_train'][split_point:], device=self.DEVICE)))
+            self.y_val = torch.cat((self.y_val, torch.tensor(train_data['y_train'][split_point:], device=self.DEVICE)))
+        else:
+            self.x_train = torch.tensor(train_data['x_train'][:split_point], device=self.DEVICE)
+            self.y_train = torch.tensor(train_data['y_train'][:split_point], device=self.DEVICE)
+            self.x_val = torch.tensor(train_data['x_train'][split_point:], device=self.DEVICE)
+            self.y_val = torch.tensor(train_data['y_train'][split_point:], device=self.DEVICE)
+
         # shuffle in dataloader
         print('dataset batch size: ', self.y_train.shape[0])
 
