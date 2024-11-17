@@ -159,6 +159,7 @@ class UNCERTAINTY_predictor(object):
                 self.optimizer.zero_grad()
                 x = x.to(self.DEVICE)
                 y_true = y_true.to(self.DEVICE)
+
                 result  = self.model(x)
                 y_pred, uncertainty = result[0], result[1]
 
@@ -349,6 +350,50 @@ class NN_predictor(object):
             result = self.model.forward(x)
         return result
 
+
+    def calculate_transfer_loss(self, epochs):
+        transfer_criterion = nn.MSELoss()  # Initialize the NLL loss criterion
+        txt = "MSE (transfer metric)"
+        
+        print(f"Epoch {self.epo - 1} MSE Transfer Loss Calculation")
+
+        # Define DataLoader for training dataset
+        train_dataset = NN_dataset(self.x_train, self.y_train)
+        train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+
+        for e in range(epochs):
+            train_loss = 0.0  # Initialize train_loss for each epoch
+            #self.model.train()  # Ensure model is in training mode
+            
+            for i, data in enumerate(train_loader):
+                x, y_true = data
+                x = x.to(self.DEVICE)
+                y_true = y_true.to(self.DEVICE)
+
+                # Forward pass
+                result = self.model(x)
+                y_pred, u = result[0], result[1]
+
+                # Calculate the NLL loss
+                batch_loss = transfer_criterion(y_pred, y_true)
+                train_loss += batch_loss.item()
+
+            # Average loss for the epoch
+            ave_loss = train_loss / len(train_loader)  # Use len(train_loader) for average over batches
+            print(f"Epoch {e} average loss: {ave_loss}")
+            
+            # Log the average loss for the epoch
+            self.logger.info(f'epoch {e}: {txt} train average MSE Transfer Loss {ave_loss}.')
+
+            # Reset the loss for the next epoch
+            train_loss = 0.0
+
+        self.epo += 1  # Increment the epoch counter
+
+
+
+
+
     def train(self, epochs, writer, sign):
         train_loss = 0.0
         train_dataset = NN_dataset(self.x_train, self.y_train)
@@ -366,8 +411,10 @@ class NN_predictor(object):
                 self.optimizer.zero_grad()
                 x = x.to(self.DEVICE)
                 y_true = y_true.to(self.DEVICE)
+
                 result = self.model(x)
                 y_pred, u = result[0], result[1]
+
                 loss = self.criterion(y_pred, y_true)
 
                 loss.backward()
@@ -616,7 +663,9 @@ class Inverse_N_net(nn.Module):
         self.dense_3 = nn.Linear(128, 128)
         self.dense_4 = nn.Linear(128, 20)
         # self.dense_5 = nn.Linear(20, size_out)
-        self.EDL_layer = nn.Linear(20, 8, bias=True)
+        
+        # Changed output size from 8 to size_out setting to support multiple agents
+        self.EDL_layer = nn.Linear(20, size_out, bias=True)
 
         self.lmb = torch.FloatTensor([0.005])
         # self.dense_4 = nn.Linear(128, 500)
@@ -657,8 +706,6 @@ class Inverse_N_net(nn.Module):
         u = K / torch.sum(alpha, dim=1, keepdim=True)  # uncertainty
         
         return logits, u, alpha, l2_loss
-
-
 
 
 class N_net(nn.Module):
@@ -725,31 +772,98 @@ class N_net(nn.Module):
 def generate_forward_dataset(file, action=8, backward=False, history=1):
     with open(file, 'rb') as f:
         contents = pkl.load(f)
-        
+
     feature = list()
     target = list()
+
     if backward:
         assert history == 1
+
+        num_agents = np.array(contents[0][0]).shape[1]  # Get number of agents (assumes shape is (time_steps, num_agents, observations))
+        obs_per_agent = np.array(contents[0][0]).shape[2]  # Observations per agent
+        joint_state_size = obs_per_agent * num_agents  # Joint state size = observations * number of agents
+
         for e in range(contents[0].__len__()):
-            for s in range(360):
-                x = np.concatenate((contents[0][e][s], contents[0][e][s+1]), axis=1)
+            for s in range(359):
+
+                # For every time step, create joint state and joint future state t+1 pairs
+                j_state = []
+                j_action = []
+                j_state_next = []
+
+                # For every time step, create joint action and joint state for x and y
+                for agent in range(num_agents):
+                    agent_obs = contents[0][e][s][agent]
+                    action_onehot = idx2onehot(np.array([contents[1][e][s][agent]]), action)
+
+                    j_state.append(agent_obs)
+                    j_state_next.append(contents[0][e][s+1][agent])
+                    j_action.append(action_onehot)
+
+                joint_state = np.concatenate(j_state)
+                joint_state_next = np.concatenate(j_state_next)
+                joint_action = np.concatenate(j_action).flatten()
+
+
+                # Concatenate and reshape for use in feature, output: (1, joint state size + joint state next size)
+                x = np.concatenate((joint_state, joint_state_next)).reshape(1, -1)
+
+                # Append propoerly formatted x to feature list
                 feature.append(x)
-                y = idx2onehot(contents[1][e][s], action)
+                
+                # Get actions for all agents at step s
+                actions = contents[1][e][s]
+
+                # Reshape joint action for target format
+                y = joint_action.reshape(1, -1)
+
                 target.append(y)
+
     else:
-        unit_size = np.concatenate((contents[0][0][0], idx2onehot(contents[1][0][0][0], action)), axis=1).shape[1]
-        input_size = history * unit_size
+        num_agents = np.array(contents[0][0]).shape[1]  # Get number of agents (assumes shape is (time_steps, num_agents, observations))
+        obs_per_agent = np.array(contents[0][0]).shape[2]  # Observations per agent
+        joint_state_size = obs_per_agent * num_agents  # Joint state size = observations * number of agents
+        joint_action_size = action * num_agents  # Joint action size = action size * number of agents
+
+        input_size = history * (joint_state_size + joint_action_size)  # Total input size
+
         for e in range(contents[0].__len__()):
             seq = np.zeros((1, input_size))
-            for s in range(360):
-                x = np.concatenate((contents[0][e][s], idx2onehot(contents[1][e][s][0], action)), axis=1)
+            for s in range(359):
+
+                # Store joint states and actions for feature and target creation
+                j_state = []
+                j_action = []
+                j_state_t = []
+
+                # For every time step, create joint action and joint state for x and y
+                for agent in range(num_agents):
+                    agent_obs = contents[0][e][s][agent]
+                    action_onehot = idx2onehot(np.array([contents[1][e][s][agent]]), action)
+
+                    j_state.append(agent_obs)
+                    j_state_t.append(contents[0][e][s+1][agent])
+                    j_action.append(action_onehot)
+
+                joint_state = np.concatenate(j_state)
+                j_state_target = np.concatenate(j_state_t)
+                joint_action = np.concatenate(j_action).flatten()
+
+                x = np.concatenate((joint_state, joint_action)).reshape(1, -1)
+
                 seq = np.concatenate((seq, x), axis=1)
                 feature.append(seq[:, -input_size :])
-                y = contents[0][e][s+1]
+                
+                y = j_state_target.reshape(1, -1)
+
                 target.append(y)
 
     feature= np.concatenate(feature, axis=0)
     target = np.concatenate(target, axis=0)
+    
+    #print(f"feature shape: {feature.shape}")
+    #print(f"target shape: {target.shape}")
+
     total_idx = len(target)
     sample_idx = range(total_idx)
     sample_idx = random.sample(sample_idx, len(sample_idx))

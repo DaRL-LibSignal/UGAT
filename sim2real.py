@@ -31,12 +31,12 @@ parser.add_argument('-t', '--task', type=str, default="sim2real", help="task typ
 parser.add_argument('-a', '--agent', type=str, default="dqn", help="agent type of agents in RL environment")
 parser.add_argument('-n', '--network', type=str, default="cityflow1x1", help="network name")
 parser.add_argument('-d', '--dataset', type=str, default='onfly', help='type of dataset in training process')
-
-# sumohz4x4
+parser.add_argument('--calculate_transfer_metrics', type=bool, default=False, help='Enable transfer metric calculation')
 
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.ngpu
 
+print(f"Parser args: \n{args}")
 
 if torch.cuda.is_available():
     num_gpus = torch.cuda.device_count()
@@ -103,9 +103,16 @@ if __name__ == '__main__':
     # Start timer
     start_time = time.time()
 
-    try:
-        test.run()
-    finally:
-        # Calculate and print elapsed time
-        elapsed_time = time.time() - start_time
-        print(f"elapsed_time: {elapsed_time}")
+    # try:
+    #     test.run()
+    # except Exception as e:
+    #     # Print the error message if an exception occurs
+    #     print(f"An error occurred: {e}")
+    # finally:
+    #     # Calculate and print the elapsed time, regardless of success or failure
+    #     elapsed_time = time.time() - start_time
+    #     print(f"elapsed_time: {elapsed_time}")
+
+    test.run()
+    elapsed_time = time.time() - start_time
+    print(f"elapsed_time: {elapsed_time}")

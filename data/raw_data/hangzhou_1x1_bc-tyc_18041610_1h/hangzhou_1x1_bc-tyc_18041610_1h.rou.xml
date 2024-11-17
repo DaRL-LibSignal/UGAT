@@ -6,7 +6,7 @@
 		<!-- v3:rain -->
 		<!-- <vType accel="0.75" decel="3.5" emergencyDecel='6.0' startupDelay='0.25'  id="pkw" length="5.0" maxSpeed="11.111" minGap="2.5" width="2.0"/> -->
 		<!-- v4:snow -->
-		<vType accel="0.5" decel="1.5" emergencyDecel='2.0' startupDelay='0.5' id="pkw" length="5.0" maxSpeed="11.111" minGap="2.5" width="2.0"/>
+		<vType accel="2.6" decel="4.5" emergencyDecel='9.0' startupDelay='0.0' id="pkw" length="5.0" maxSpeed="11.11" minGap="2.5" width="2.0"/>
 		
 		<vehicle depart="0" id="0" type="pkw">
 			<route edges="road_0_1_0 road_1_1_0"/>

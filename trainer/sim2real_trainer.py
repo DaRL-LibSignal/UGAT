@@ -130,6 +130,7 @@ class SIM2REALTrainer(BaseTrainer):
         num_agent = int(len(self.world_sim.intersections) / agent_sim.sub_agents)
         print(f"Total number of agents: {num_agent}, Total number of sub agents: {agent_sim.sub_agents}")
         self.agents_sim.append(agent_sim)  # initialized N agents for traffic light control
+
         for i in range(1, num_agent):
             self.agents_sim.append(
                 Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
@@ -145,6 +146,7 @@ class SIM2REALTrainer(BaseTrainer):
             self.agents_real.append(
                 Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
                     self.world_real, i))
+
 
     def create_env(self):
         '''
@@ -187,14 +189,19 @@ class SIM2REALTrainer(BaseTrainer):
                                               self.agents_real[0].action_space.n, device, self.model_path,
                                               self.data_path + 'sim.pkl', backward=True)
             # pretrain model and load pretrained ones
+
+        # This supports multiple agents now
         elif self.INVERSE == 'UNCERTAINTY':
 
+            # Considers number of agents in both input and output dimension calculations to allow for multi-agent setting
+            num_agents = len(self.agents_real)
+
             self.forward_model = NN_predictor(self.logger,
-                                            (self.agents_real[0].ob_generator.ob_length + self.agents_real[0].action_space.n) * self.HISTORY_T,
-                                            self.agents_real[0].ob_generator.ob_length, device, self.model_path,
+                                            (self.agents_real[0].ob_generator.ob_length * num_agents + self.agents_real[0].action_space.n * num_agents) * self.HISTORY_T,
+                                            self.agents_real[0].ob_generator.ob_length * num_agents, device, self.model_path,
                                             self.data_path + 'real.pkl', history=self.HISTORY_T)
-            self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * 2,
-                                            self.agents_real[0].action_space.n, device, self.model_path,
+            self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * num_agents * 2,
+                                            self.agents_real[0].action_space.n * num_agents, device, self.model_path,
                                             self.data_path + 'sim.pkl', backward=True)
         
         #'pretrained'/'restart'
@@ -213,8 +220,16 @@ class SIM2REALTrainer(BaseTrainer):
             R = self.real_rollout(e - 1)
             self.sim_rollout(e - 1)
             V.append(R)
-            # train forward model
-            self.forward_train(writer=self.writer)
+
+            # Calculate transfer metric if flag is present
+            if self.config['command'].get('calculate_transfer_metrics', False):
+                # train forward model
+                self.forward_train(writer=self.writer, transfer_calc=True)
+
+            else:
+                # train forward model
+                self.forward_train(writer=self.writer)
+
             # train inverse model
             _ = self.inverse_train(writer=self.writer)
             # sim2real training
@@ -324,14 +339,13 @@ class SIM2REALTrainer(BaseTrainer):
         time_stamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
         print("timestamp:{} successfully loaded a model with param {}".format(time_stamp, model_path))
 
+    # Now supports multi-agent setting
     def sim_rollout(self, e):
-        # TODO: support multiple intersections
-
         self.metric_sim.clear()
         obs = self.env_sim.reset()
         action_record = []
         states_record = []
-        states_record.append(obs[0])
+
         for i in range(self.steps):
             if i % self.action_interval == 0:
                 phases = np.stack([ag.get_phase() for ag in self.agents_sim])
@@ -340,16 +354,31 @@ class SIM2REALTrainer(BaseTrainer):
                     action = ag.get_action(obs[idx], phases[idx], test=True)
                     actions.append(action)
 
-                actions = np.stack(actions)
-                action_record.append(actions)
+                # Concatenate actions from all agents into a single joint action vector
+                joint_action = np.concatenate(actions)
+                action_record.append(joint_action)  # Append the joint action
+
+                #actions = np.stack(actions)
+                #action_record.append(actions)
+
                 rewards_list = []
                 for _ in range(self.action_interval):
-                    obs, rewards, dones, _ = self.env_sim.step(actions.flatten())
+                    obs, rewards, dones, _ = self.env_sim.step(joint_action) # Modified to use joint action instead of actions.flatten()
                     i += 1
                     rewards_list.append(np.stack(rewards))
                 rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
                 self.metric_sim.update(rewards)
-                states_record.append(obs[0])
+
+                # Added to support multiple agents, appending all of their observations every time step
+                state = []
+                joint_state = []
+                for ag in range(len(self.agents_sim)):
+                    state.append(obs[ag])
+
+                # Concatenate all agent observations for each time step and put into states_record
+                joint_state = np.concatenate(state)
+                states_record.append(joint_state)
+
             if all(dones):
                 break
 
@@ -365,8 +394,8 @@ class SIM2REALTrainer(BaseTrainer):
                                                                                                                 self.metric_sim.throughput()))
         return
 
+    # Now supports multi-agent setting
     def real_rollout(self, e):
-        # TODO: support multiple intersections
         discount = 0.95
         self.metric_real.clear()
         R = np.array([0 for _ in self.agents_real], dtype=np.float64)
@@ -375,7 +404,9 @@ class SIM2REALTrainer(BaseTrainer):
         states_record = []
         for a in self.agents_real:
             a.reset()
-        states_record.append(obs[0])
+
+        #states_record.append(obs[0])
+
         for i in range(self.steps):
             discount *= discount
             if i % self.action_interval == 0:
@@ -385,19 +416,35 @@ class SIM2REALTrainer(BaseTrainer):
                     action = ag.get_action(obs[idx], phases[idx], test=True)
                     actions.append(action)
 
-                actions = np.stack(actions)
-                action_record.append(actions)
+                # Concatenate actions from all agents into a single joint action vector
+                joint_action = np.concatenate(actions)
+                action_record.append(joint_action)  # Append the joint action
+
                 rewards_list = []
                 for _ in range(self.action_interval):
-                    obs, rewards, dones, _ = self.env_real.step(actions.flatten())
+                    obs, rewards, dones, _ = self.env_real.step(joint_action) # Modified to use joint action instead of actions.flatten()
                     i += 1
                     rewards_list.append(np.stack(rewards))
                 rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
                 R += discount * rewards
                 self.metric_real.update(rewards)
-                states_record.append(obs[0])
+
+                # Added to support multiple agents, appending all of their observations every time step
+                state = []
+                joint_state = []
+                for ag in range(len(self.agents_sim)):
+                    state.append(obs[ag])
+                    
+                # Concatenate all agent observations for each time step and put into states_record
+                joint_state = np.concatenate(state)
+                states_record.append(joint_state)
+
+                #states_record.append(obs[0])
+
             if all(dones):
                 break
+
+        #print(f"states_record: {np.array(states_record).shape}")
 
         with open(os.path.join(self.data_path, 'real.pkl'), 'wb') as f:
             pkl.dump([[states_record], [action_record]], f)
@@ -409,11 +456,12 @@ class SIM2REALTrainer(BaseTrainer):
                                                                                                                  self.metric_real.queue(),
                                                                                                                  self.metric_real.delay(),
                                                                                                                  self.metric_real.throughput()))
-        # 
-        return R
+        return R        
 
-    def forward_train(self, writer):
+    def forward_train(self, writer, transfer_calc=False):
         self.forward_model.load_dataset()
+        if transfer_calc:
+            self.forward_model.calculate_transfer_loss(1)
         self.forward_model.train(100, writer=writer, sign='forward')
 
     def inverse_train(self, writer):
@@ -433,9 +481,15 @@ class SIM2REALTrainer(BaseTrainer):
         # [ag.load_model(e='', customized_path=path) for ag in self.agents_sim]
         [ag.replay_buffer.clear() for ag in self.agents_sim]
 
+        # Sets threshold for inverse model
         if self.INVERSE == 'UNCERTAINTY':
-            self.alpha = np.zeros(1)
+            #self.alpha = np.zeros(1)
+            self.alpha = np.array([0.0])
+
         for ep in range(episode):
+
+            #print(f"self.alpha: {self.alpha}")
+
             epoch_diff = []
             epoch_distribution = []
             epoch_uncertainty = []
@@ -444,68 +498,106 @@ class SIM2REALTrainer(BaseTrainer):
             last_obs = self.env_sim.reset()
             episode_loss = []
             i = 0
-            input_size = (last_obs[0].shape[1] + 8) * self.HISTORY_T
+
+            # Added number of agents to modify input size for multi-agent setting
+            num_agents = len(self.agents_sim)
+
+            # Changed input size to accomodate multi-agent scenario
+            input_size = (last_obs[0].shape[1] * num_agents + 8 * num_agents) * self.HISTORY_T
+
             seq = np.zeros((1, input_size))
             while i < self.steps:
                 if i % self.action_interval == 0:
                     last_phase = np.stack([ag.get_phase() for ag in self.agents_sim])  # [agent, intersections]
 
                     actions = []
-                    for idx, ag in enumerate(self.agents_sim):
-                        actions.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))
-                    actions = np.stack(actions)  # [agent, intersections]
+                    actions_cold = []
+                    states = []
+                    joint_action = []
                     actions_prob = []
-                    for idx, ag in enumerate(self.agents_sim): # now it is single agent. so directly used the output uncertainty
-                        # if multiple agents, please consider adjustment
+                    joint_s_prime = []
+                    grounding_actions = []
+
+                    # Loop through agents gathering actions, action probs, and states
+                    # Now supports multi-agent setting and only using a single for loop
+                    for idx, ag in enumerate(self.agents_sim):
+
+                        # Get actions as one hot encoded over 8 possible actions
+                        actions_cold.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))
+                        action_onehot = idx2onehot(np.array(ag.get_action(last_obs[idx], last_phase[idx], test=False)), 8)
+                        actions.append(action_onehot)
+
                         actions_prob.append(ag.get_action_prob(last_obs[idx], last_phase[idx]))
 
-                        s_prime = []
-                        forward_input = np.concatenate((last_obs[0], idx2onehot(actions[0], 8)), axis=1)
-                        seq = np.concatenate((seq, forward_input), axis=1)
+                        states.append(last_obs[0])
 
-                        s_prime.append(self.forward_model.predict(torch.from_numpy(seq[:, -input_size :]).float())[0])
-                        grounding_actions = []
+                    # Concatenate joint state for multi-agent setting
+                    joint_state = np.concatenate(states).flatten()
 
-                        last_obs_tensor = torch.from_numpy(last_obs[0]).to(self.device).float()
-                        s_prime_tensor = s_prime[0].to(self.device)
+                    # Added joint action for multi-agent setting
+                    joint_action = np.concatenate(actions).flatten()
 
-                        inverse_input = torch.cat((last_obs_tensor, s_prime_tensor), dim=1).float()
+                    # Forward input is now joint state and joint action to support multi-agent scenario
+                    forward_input = np.concatenate((joint_state, joint_action)).reshape(1, -1)
 
-                        if self.INVERSE == 'NN':
-                            logit_distribution, uncertainty = self.inverse_model.predict(inverse_input) #uncertainty is just holding a place here, not actually working
-                            distribution = F.softmax(logit_distribution)
+                    seq = np.concatenate((seq, forward_input), axis=1)
 
-                            action_max = np.array(np.argmax(logit_distribution.to(self.device).numpy()))
-                            grounding_actions.append([np.array(action_max)])
-                            grounding_actions = np.stack(grounding_actions)
-                            epoch_diff.append([actions[0][0], grounding_actions[0][0]])
-                            epoch_distribution.append(distribution.to(self.device).numpy())
-                        elif self.INVERSE =='UNCERTAINTY':
-                            logit_distribution, uncertainty = self.inverse_model.predict(inverse_input)
-                            distribution = F.softmax(logit_distribution)
+                    joint_s_prime.append(self.forward_model.predict(torch.from_numpy(seq[:, -input_size :]).float())[0])
 
-                            # Changed action max to GPU
-                            action_max = torch.argmax(logit_distribution).to(self.device)
+                    # Move tensors to GPU
+                    s_prime_tensor = joint_s_prime[0].to(self.device)
+                    last_obs_tensor = torch.from_numpy(joint_state).to(self.device).float()
 
-                            # distribution, action_max, uncertainty = self.inverse_model.predict(inverse_input)
+                    # Resize last obs tensor to match s_prime_tensor (1, num agents * num observations per agent)
+                    last_obs_tensor = last_obs_tensor.unsqueeze(0)
 
-                            #grounding_actions.append([np.array(action_max)])
-                            grounding_actions.append(action_max.clone().detach())  # Remove the list brackets
+                    inverse_input = torch.cat((last_obs_tensor, s_prime_tensor), dim=1).float()
 
-                            #grounding_actions = np.stack(grounding_actions)
-                            grounding_actions = torch.stack(grounding_actions)
+                    # Moved this block outside of the for loop to compute once for all agents instead of once per agent
+                    if self.INVERSE == 'NN':
+                        #print("NN")
+                        logit_distribution, uncertainty = self.inverse_model.predict(inverse_input) #uncertainty is just holding a place here, not actually working
+                        distribution = F.softmax(logit_distribution)
 
-                            
-                            #epoch_diff.append([actions[0][0], grounding_actions[0][0]])
-                            epoch_diff.append([actions.item(), grounding_actions.item()])
+                        action_max = np.array(np.argmax(logit_distribution.to(self.device).numpy()))
+                        grounding_actions.append([np.array(action_max)])
+                        grounding_actions = np.stack(grounding_actions)
+                        epoch_diff.append([actions[0][0], grounding_actions[0][0]])
+                        epoch_distribution.append(distribution.to(self.device).numpy())
 
+                    # Inverse model generates a single uncertainity value for estep in every epoch
+                    elif self.INVERSE =='UNCERTAINTY':
 
+                        # TODO This assumes uncertainty is calculated as a singular value for the joint grounded action (grounded actions for all agents)
+                        logit_distribution, uncertainty = self.inverse_model.predict(inverse_input)
 
-                            epoch_distribution.append(distribution)
-                            epoch_uncertainty.append(uncertainty)
+                        # Reshape to (batch_size, num_agents, num_actions)
+                        logit_distribution = logit_distribution.view(-1, num_agents, 8)
+
+                        # Assuming logit_distribution is your logits tensor
+                        distribution = F.softmax(logit_distribution, dim=2)
+
+                        # Get the action with the maximum probability for each agent in the batch
+                        action_max = torch.argmax(distribution, dim=2).to(self.device)
+
+                        # Clone max actions and remove grounded actions from computation graph
+                        grounding_actions.append(action_max.clone().detach())  # Remove the list brackets
+
+                        grounding_actions = torch.stack(grounding_actions).flatten().cpu().numpy()
+
+                        actions_cold = np.concatenate(actions_cold).flatten()
+
+                        # Now uses joint action for epoch diff in the multi-agent setting
+                        epoch_diff.append([actions_cold, grounding_actions])
+
+                        epoch_distribution.append(distribution)
+                        epoch_uncertainty.append(uncertainty)
 
                     # if uncertainty.detach().numpy()[0] < np.array(1): #self.alpha
                     #if uncertainty.detach().numpy()[0] < self.alpha: #self.alpha
+
+                    #print(f"self.alpha: {self.alpha}, uncertainty.detach().item(): {uncertainty.detach().item()}")
+
                     if uncertainty.detach().item() < self.alpha:
                         # take grounding action
 
@@ -515,7 +607,10 @@ class SIM2REALTrainer(BaseTrainer):
                             i += 1
                             rewards_list.append(np.stack(rewards))
 
-                        seq[:, -8:] = idx2onehot(grounding_actions[0], 8)
+                        # Commented out because it is not being used
+                        #seq[:, -8:] = idx2onehot(grounding_actions[0], 8)
+
+
                         rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
 
                         self.metric_sim.update(rewards)
@@ -530,10 +625,14 @@ class SIM2REALTrainer(BaseTrainer):
                         # take original action
                         epoch_diff.append([actions[0][0], -1])
                         rewards_list = []
-                        forward_input = np.concatenate((last_obs[0], idx2onehot(actions[0], 8)), axis=1)
-                        seq = np.concatenate((seq, forward_input), axis=1)
+                        
+                        # Commenting out not sure why here
+                        #forward_input = np.concatenate((last_obs[0], idx2onehot(actions[0], 8)), axis=1)
+                        #seq = np.concatenate((seq, forward_input), axis=1)
+
+                        # Changed actions to joint action to support multi-agent setting
                         for _ in range(self.action_interval):
-                            obs, rewards, dones, _ = self.env_sim.step(actions.flatten())
+                            obs, rewards, dones, _ = self.env_sim.step(actions_cold)
                             i += 1
                             rewards_list.append(np.stack(rewards))
                         rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
@@ -588,8 +687,6 @@ class SIM2REALTrainer(BaseTrainer):
             writer.add_scalar("queue/simu_train", self.metric_sim.queue(), e)
             writer.add_scalar("delay/simu_train", self.metric_sim.queue(), e)
             writer.add_scalar("mean_loss/simu_train", mean_loss, e)
-            # print(epoch_uncertainty)
-            
             writer.add_scalar("uncertanty/act_uncertainty_epo", temp, e)
 
         self.test(e=e)

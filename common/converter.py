@@ -781,8 +781,8 @@ def cityflow2sumo_flow(args):
     '''
     # parent dir of current dir
     f_cwd = os.path.abspath(os.path.dirname(os.getcwd()) + os.path.sep + ".")
-    sumofile = os.path.join(f_cwd, 'data/raw_data', args.sumotraffic)
-    cityflowfile = os.path.join(f_cwd, 'data/raw_data', args.or_cityflowtraffic)
+    sumofile = os.path.join(f_cwd, 'data/raw_data', args.or_sumotraffic)
+    cityflowfile = os.path.join(f_cwd, 'data/raw_data', args.cityflowtraffic)
 
     data = json.load(open(cityflowfile, 'r', encoding="utf-8"))
     # sorted vehicle according to depart time
@@ -942,8 +942,8 @@ def cityflow2sumo_net(args):
     '''
     # parent dir of current dir
     f_cwd = os.path.abspath(os.path.dirname(os.getcwd()) + os.path.sep + ".")
-    sumofile = os.path.join(f_cwd, 'data/raw_data', args.sumonet)
-    cityflowfile = os.path.join(f_cwd, 'data/raw_data', args.or_cityflownet)
+    sumofile = os.path.join(f_cwd, 'data/raw_data', args.or_sumonet)
+    cityflowfile = os.path.join(f_cwd, 'data/raw_data', args.cityflownet)
 
     sumo_node = get_filename(sumofile, 'nod')
     sumo_edge = get_filename(sumofile, 'edg')
