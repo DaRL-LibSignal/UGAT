@@ -52,6 +52,8 @@ class SIM2REALTrainer(BaseTrainer):
         self.buffer_size = Registry.mapping['trainer_mapping']['setting'].param['buffer_size']
         self.action_interval = Registry.mapping['trainer_mapping']['setting'].param['action_interval']
 
+        self.transfer_metric = Registry.mapping['trainer_mapping']['setting'].param['transfer_metric']
+
         self.learning_rate = 0.0001 # set for before sim2real manually
 
         self.save_rate = Registry.mapping['logger_mapping']['setting'].param['save_rate']
@@ -211,6 +213,15 @@ class SIM2REALTrainer(BaseTrainer):
         elif self.experiment_mode =='restart':
             path = self.pretrain(episodes=self.pretrain_n)
 
+        # collect trajectories for transfer metric
+        if self.transfer_metric == True:
+            start_time = time.time()  # Start timer
+            self.precollect_trajectories(100, "precollected.pkl")
+            end_time = time.time()  # End timer
+
+            elapsed_time = end_time - start_time  # Calculate elapsed time
+            print(f"Time taken for precollecting trajectories: {elapsed_time:.2f} seconds")
+    
         # pretrain model and load pretrained ones
         best_e = -1
         V = []
@@ -405,8 +416,6 @@ class SIM2REALTrainer(BaseTrainer):
         for a in self.agents_real:
             a.reset()
 
-        #states_record.append(obs[0])
-
         for i in range(self.steps):
             discount *= discount
             if i % self.action_interval == 0:
@@ -420,6 +429,16 @@ class SIM2REALTrainer(BaseTrainer):
                 joint_action = np.concatenate(actions)
                 action_record.append(joint_action)  # Append the joint action
 
+                # Added to support multiple agents, appending all of their observations every time step
+                state = []
+                joint_state = []
+                for ag in range(len(self.agents_sim)):
+                    state.append(obs[ag])
+
+                # Concatenate all agent observations for each time step and put into states_record
+                joint_state = np.concatenate(state)
+                states_record.append(joint_state)
+
                 rewards_list = []
                 for _ in range(self.action_interval):
                     obs, rewards, dones, _ = self.env_real.step(joint_action) # Modified to use joint action instead of actions.flatten()
@@ -429,22 +448,8 @@ class SIM2REALTrainer(BaseTrainer):
                 R += discount * rewards
                 self.metric_real.update(rewards)
 
-                # Added to support multiple agents, appending all of their observations every time step
-                state = []
-                joint_state = []
-                for ag in range(len(self.agents_sim)):
-                    state.append(obs[ag])
-                    
-                # Concatenate all agent observations for each time step and put into states_record
-                joint_state = np.concatenate(state)
-                states_record.append(joint_state)
-
-                #states_record.append(obs[0])
-
             if all(dones):
                 break
-
-        #print(f"states_record: {np.array(states_record).shape}")
 
         with open(os.path.join(self.data_path, 'real.pkl'), 'wb') as f:
             pkl.dump([[states_record], [action_record]], f)
@@ -457,11 +462,65 @@ class SIM2REALTrainer(BaseTrainer):
                                                                                                                  self.metric_real.delay(),
                                                                                                                  self.metric_real.throughput()))
         return R        
+    
+
+    def precollect_trajectories(self, num_episodes, save_path="precollected.pkl"):
+        """
+        Collect trajectories from a specified number of episodes and save them as a list of state-action pairs.
+
+        :param num_episodes: Number of episodes to collect trajectories from.
+        :param save_path: Path to save the collected trajectories as a pickle file.
+        """
+        trajectories = []  # To store all trajectories
+
+        for e in range(num_episodes):
+            self.metric_real.clear()
+            obs = self.env_real.reset()
+            for a in self.agents_real:
+                a.reset()
+
+            episode_trajectory = []  # To store state-action pairs for the current episode
+            for step in range(self.steps):
+                if step % self.action_interval == 0:
+                    # Get actions from all agents
+                    phases = np.stack([ag.get_phase() for ag in self.agents_real])
+                    actions = [
+                        ag.get_action(obs[idx], phases[idx], test=True)
+                        for idx, ag in enumerate(self.agents_real)
+                    ]
+                    
+                    # Concatenate actions into a joint action vector
+                    joint_action = np.concatenate(actions)
+
+                    # Store state-action pair
+                    joint_state = np.concatenate(obs)  # Combine all agent observations into one state
+                    episode_trajectory.append((joint_state.flatten(), joint_action.flatten()))  # Save state-action pair
+
+                    # Step the environment
+                    for _ in range(self.action_interval):
+                        obs, _, done, _ = self.env_real.step(joint_action)
+
+
+                    if all(done):
+                        break
+
+            # Add the episode trajectory to the list of all trajectories
+            trajectories.append(episode_trajectory)
+
+        # Save all collected trajectories to a pickle file
+        with open(save_path, 'wb') as f:
+            pkl.dump(trajectories, f)
+
+        self.logger.info(f"Precollected {num_episodes} episodes and saved to {save_path}")
+
+        return
+
+
 
     def forward_train(self, writer, transfer_calc=False):
         self.forward_model.load_dataset()
         if transfer_calc:
-            self.forward_model.calculate_transfer_loss(1)
+            self.forward_model.calculate_transfer_loss("precollected.pkl", 1, len(self.agents_real))
         self.forward_model.train(100, writer=writer, sign='forward')
 
     def inverse_train(self, writer):
@@ -588,7 +647,7 @@ class SIM2REALTrainer(BaseTrainer):
                         actions_cold = np.concatenate(actions_cold).flatten()
 
                         # Now uses joint action for epoch diff in the multi-agent setting
-                        epoch_diff.append([actions_cold, grounding_actions])
+                        #epoch_diff.append([actions_cold, grounding_actions])
 
                         epoch_distribution.append(distribution)
                         epoch_uncertainty.append(uncertainty)
@@ -623,7 +682,7 @@ class SIM2REALTrainer(BaseTrainer):
 
                     else:
                         # take original action
-                        epoch_diff.append([actions[0][0], -1])
+                        epoch_diff.append(joint_action)
                         rewards_list = []
                         
                         # Commenting out not sure why here
@@ -662,6 +721,7 @@ class SIM2REALTrainer(BaseTrainer):
                 mean_loss = np.mean(np.array(episode_loss))
             else:
                 mean_loss = 0
+
             action_diff.append(epoch_diff)
             action_distribution.append(epoch_distribution)
 

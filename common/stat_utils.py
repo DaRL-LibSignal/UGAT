@@ -351,44 +351,102 @@ class NN_predictor(object):
         return result
 
 
-    def calculate_transfer_loss(self, epochs):
-        transfer_criterion = nn.MSELoss()  # Initialize the NLL loss criterion
+
+    def calculate_transfer_loss(self, pkl_file, epochs, num_agents):
+        """
+        Calculate the MSE transfer loss using precollected trajectories from a pickle file.
+
+        :param pkl_file: Path to the pickle file containing precollected trajectories.
+        :param epochs: Number of epochs to calculate the loss.
+        """
+        transfer_criterion = nn.MSELoss()  # Initialize the MSE loss criterion
         txt = "MSE (transfer metric)"
-        
-        print(f"Epoch {self.epo - 1} MSE Transfer Loss Calculation")
 
-        # Define DataLoader for training dataset
-        train_dataset = NN_dataset(self.x_train, self.y_train)
-        train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+        # Load precollected trajectories
+        with open(pkl_file, 'rb') as f:
+            trajectories = pkl.load(f)
 
+        print(f"Loaded {len(trajectories)} trajectories for transfer loss calculation")
+
+
+       # Prepare a new list to store the one-hot encoded actions
+        feature = []
+        target = []
+
+        first_joint_state, _ = trajectories[0][0]
+
+        joint_state_size = len(first_joint_state)  # Total size of the joint state
+
+        actions_per_agent = 8 # hardcoded number of actions per agent
+
+        input_size = self.history * (joint_state_size + (actions_per_agent * num_agents))
+
+        for episode_idx, trajectory in enumerate(trajectories):  # Loop over episodes
+            #onehot_trajectory = []
+            seq = np.zeros((1, input_size))
+
+            for t in range(len(trajectory)-1):  # Loop over steps in the episode
+                joint_state, joint_action = trajectory[t]
+                next_state, _ = trajectory[t + 1]
+
+                # Split joint_action into per-agent actions and one-hot encode each
+                agent_actions = np.split(np.array(joint_action), num_agents)
+                
+                onehot_actions = [idx2onehot(np.array([int(a)]), 8).flatten() for a in agent_actions]
+                
+                joint_action_onehot = np.concatenate(onehot_actions)  # Combine back to joint action
+                
+                #onehot_trajectory.append((joint_state, joint_action_onehot))
+
+                x = np.concatenate((joint_state, joint_action_onehot)).reshape(1, -1)
+
+                seq = np.concatenate((seq, x), axis=1)
+
+                feature.append(seq[:, -input_size :])
+
+                target.append(next_state)
+
+            # Append the processed trajectory (episode) to the list
+            #onehot_trajectories.append(onehot_trajectory)
+
+        feature= np.concatenate(feature, axis=0)
+        target = np.concatenate(target, axis=0)
+
+        num_timesteps = feature.shape[0]
+
+        # Reshape `target` dynamically
+        target = target.reshape(num_timesteps, joint_state_size)
+
+        # Convert to PyTorch tensors
+        x_inputs = torch.tensor(feature, dtype=torch.float32).to(self.DEVICE)
+        y_targets = torch.tensor(target, dtype=torch.float32).to(self.DEVICE)
+
+        data_loader = DataLoader(
+            list(zip(x_inputs, y_targets)), batch_size=64, shuffle=True
+        )
+
+        # Perform loss calculation over epochs
         for e in range(epochs):
-            train_loss = 0.0  # Initialize train_loss for each epoch
-            #self.model.train()  # Ensure model is in training mode
-            
-            for i, data in enumerate(train_loader):
-                x, y_true = data
+            epoch_loss = 0.0  # Initialize loss for the epoch
+
+            for i, (x, y_true) in enumerate(data_loader):
                 x = x.to(self.DEVICE)
                 y_true = y_true.to(self.DEVICE)
 
                 # Forward pass
-                result = self.model(x)
-                y_pred, u = result[0], result[1]
+                y_pred, _ = self.predict(x)  # Predict next state
 
-                # Calculate the NLL loss
+                # Compute MSE loss
                 batch_loss = transfer_criterion(y_pred, y_true)
-                train_loss += batch_loss.item()
+                epoch_loss += batch_loss.item()
 
             # Average loss for the epoch
-            ave_loss = train_loss / len(train_loader)  # Use len(train_loader) for average over batches
-            print(f"Epoch {e} average loss: {ave_loss}")
-            
-            # Log the average loss for the epoch
-            self.logger.info(f'epoch {e}: {txt} train average MSE Transfer Loss {ave_loss}.')
+            ave_loss = epoch_loss / len(data_loader)
+            print(f"Epoch {e - 1}/{epochs} average loss: {ave_loss}")
 
-            # Reset the loss for the next epoch
-            train_loss = 0.0
+            # Log the average loss
+            self.logger.info(f'Epoch {e - 1}: {txt} train average MSE Transfer Loss {ave_loss}.')
 
-        self.epo += 1  # Increment the epoch counter
 
 
 
@@ -415,9 +473,29 @@ class NN_predictor(object):
                 result = self.model(x)
                 y_pred, u = result[0], result[1]
 
+                # Check if any NaN or Inf values are in the prediction or target
+                if torch.isnan(y_pred).any() or torch.isinf(y_pred).any():
+                    print(f"NaN or Inf in prediction at epoch {e}, batch {i}")
+                    continue
+                if torch.isnan(y_true).any() or torch.isinf(y_true).any():
+                    print(f"NaN or Inf in target at epoch {e}, batch {i}")
+                    continue
+
                 loss = self.criterion(y_pred, y_true)
 
+                # Check if loss is NaN or Inf
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"NaN or Inf loss at epoch {e}, batch {i}")
+                    continue
+
                 loss.backward()
+
+                # Check for NaNs in the gradients
+                for param in self.model.parameters():
+                    if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                        print(f"NaN or Inf gradient encountered at epoch {e}, batch {i}")
+                        break
+
                 self.optimizer.step()
                 train_loss += loss.item()
 
@@ -861,8 +939,8 @@ def generate_forward_dataset(file, action=8, backward=False, history=1):
     feature= np.concatenate(feature, axis=0)
     target = np.concatenate(target, axis=0)
     
-    #print(f"feature shape: {feature.shape}")
-    #print(f"target shape: {target.shape}")
+    # print(f"feature shape: {feature.shape}")
+    # print(f"target shape: {target.shape}")
 
     total_idx = len(target)
     sample_idx = range(total_idx)

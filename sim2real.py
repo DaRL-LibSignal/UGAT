@@ -14,6 +14,8 @@ import argparse
 import sys
 
 import torch
+import faulthandler
+
 
 # parseargs
 parser = argparse.ArgumentParser(description='Run Experiment')
@@ -31,7 +33,7 @@ parser.add_argument('-t', '--task', type=str, default="sim2real", help="task typ
 parser.add_argument('-a', '--agent', type=str, default="dqn", help="agent type of agents in RL environment")
 parser.add_argument('-n', '--network', type=str, default="cityflow1x1", help="network name")
 parser.add_argument('-d', '--dataset', type=str, default='onfly', help='type of dataset in training process')
-parser.add_argument('--calculate_transfer_metrics', type=bool, default=False, help='Enable transfer metric calculation')
+parser.add_argument('--calculate_transfer_metrics', type=bool, default=True, help='enable transfer metric calculation')
 
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.ngpu
@@ -99,6 +101,9 @@ class Runner:
 
 if __name__ == '__main__':
     test = Runner(args)
+
+    # Enable fault handler
+    faulthandler.enable()
 
     # Start timer
     start_time = time.time()

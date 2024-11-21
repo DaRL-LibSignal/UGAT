@@ -34,6 +34,7 @@ trainer:
   alpha: 0.5
   inverse_type: 'UNCERTAINTY' # or 'NN
   experiment_mode: 'restart'
+  transfer_metric: True
 
 model:
   name: "non-rl"
