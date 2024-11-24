@@ -525,6 +525,7 @@ elif mode == 'ac_dqn':
             if (self.passable):
                 # print("prepass", np.argmax(actions, axis=1))
                 # print(actions)
+
                 actions = self.action_transformation(np.argmax(actions, axis=1), feature)
 
                 # actions = self.action_transformation(actions, feature)

@@ -33,7 +33,8 @@ parser.add_argument('-t', '--task', type=str, default="sim2real", help="task typ
 parser.add_argument('-a', '--agent', type=str, default="dqn", help="agent type of agents in RL environment")
 parser.add_argument('-n', '--network', type=str, default="cityflow1x1", help="network name")
 parser.add_argument('-d', '--dataset', type=str, default='onfly', help='type of dataset in training process')
-parser.add_argument('--calculate_transfer_metrics', type=bool, default=True, help='enable transfer metric calculation')
+parser.add_argument('--calculate_transfer_metrics', type=bool, default=False, help='enable transfer metric calculation')
+parser.add_argument('--decentralized_GAT', type=str, default="centralized", choices=['forward', 'inverse', 'both', 'centralized'], help='enable decentralized GAT by training forward, inverse, or both in a decentralized manner')
 
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.ngpu

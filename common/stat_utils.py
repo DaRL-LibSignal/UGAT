@@ -114,8 +114,17 @@ class UNCERTAINTY_predictor(object):
         self.x_val = None
         self.y_val = None
 
-    def load_dataset(self):
+    def load_dataset(self, dataset_path=None):
+        # Temporarily override self.data_dir for the specific agent file
+        original_data_dir = self.data_dir
+        if dataset_path:
+            self.data_dir = dataset_path
+
+        # Use generate_forward_dataset to load the dataset for the specific file
         train_data = generate_forward_dataset(self.data_dir, backward=self.backward, history=self.history)
+
+        # Restore original data_dir after loading
+        self.data_dir = original_data_dir
         
         # train val split
         split_point = int(train_data['x_train'].shape[0] * 0.8)
@@ -143,7 +152,7 @@ class UNCERTAINTY_predictor(object):
             result, uncertainty = output[0], output[1]
         return result, uncertainty
 
-    def train(self, epochs, writer, sign):
+    def train(self, epochs, writer, sign, agent_num=None):
         train_loss = 0.0
         train_dataset = NN_dataset(self.x_train, self.y_train)
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
@@ -151,7 +160,10 @@ class UNCERTAINTY_predictor(object):
             txt = 'inverse'
         else:
             txt = 'forward'
-        print(f"Epoch {self.epo - 1} Training")
+        if agent_num is not None:
+            self.logger.info(f'{txt} model, training agent {agent_num}.')
+        else:
+            print(f"Epoch {self.epo - 1} Training")
         # epoch_quantiles = []
         for e in range(epochs):
             for i, data in enumerate(train_loader):
@@ -175,6 +187,10 @@ class UNCERTAINTY_predictor(object):
                 # ablation study:
                 loss = standard_loss + generated_loss + l2_loss  # v_original
 
+                # Debugging checks
+                if torch.isnan(loss).any() or torch.isinf(loss).any():
+                    print("Invalid loss detected! Skipping this batch.")
+
                 loss.backward()
                 self.optimizer.step()
                 train_loss += loss.item()
@@ -184,28 +200,28 @@ class UNCERTAINTY_predictor(object):
                 self.logger.info(f'epoch {e}: {txt} train average loss {ave_loss}.')
                 test_loss = self.test(e, txt)
 
-                if sign == 'inverse':
-                    writer.add_scalar("ave_train_Loss/start_inverse_train", ave_loss, self.epo)
-                    writer.add_scalar("ave_test_Loss/start_inverse_test", test_loss, self.epo)
-                    # writer.add_scalar("quantile/inverse_quantile", epoch_quantiles[-1], self.epo)
-                    # writer.add_scalar("quantile/inverse_quantile_details", np.array(epoch_quantiles), np.arange(start=0, stop=(self.epo+1) * len(epoch_quantiles)))
-                elif sign == 'forward':
-                    writer.add_scalar("ave_train_Loss/start_forward_train", ave_loss, self.epo)
-                    writer.add_scalar("ave_test_Loss/start_forward_test", test_loss, self.epo)
+                # if sign == 'inverse':
+                #     writer.add_scalar("ave_train_Loss/start_inverse_train", ave_loss, self.epo)
+                #     writer.add_scalar("ave_test_Loss/start_inverse_test", test_loss, self.epo)
+                #     # writer.add_scalar("quantile/inverse_quantile", epoch_quantiles[-1], self.epo)
+                #     # writer.add_scalar("quantile/inverse_quantile_details", np.array(epoch_quantiles), np.arange(start=0, stop=(self.epo+1) * len(epoch_quantiles)))
+                # elif sign == 'forward':
+                #     writer.add_scalar("ave_train_Loss/start_forward_train", ave_loss, self.epo)
+                #     writer.add_scalar("ave_test_Loss/start_forward_test", test_loss, self.epo)
 
             elif e == epochs - 1:
                 ave_loss = train_loss / len(train_dataset)
                 self.logger.info(f'epoch {e}: {txt} train average loss {ave_loss}.')
                 test_loss = self.test_inverse(e, txt)
 
-                if sign == 'inverse':
-                    # writer.add_scalar("quantile/inverse_quantile", epoch_quantiles[-1], self.epo)
-                    # writer.add_scalar("quantile/inverse_quantile_details", np.array(epoch_quantiles), np.arange(start=(self.epo) * len(epoch_quantiles), stop=(self.epo +1)* len(epoch_quantiles)))
-                    writer.add_scalar("ave_train_Loss/end_inverse_train", ave_loss, self.epo)
-                    writer.add_scalar("ave_test_Loss/end_inverse_test", test_loss, self.epo)
-                elif sign == 'forward':
-                    writer.add_scalar("ave_train_Loss/end_forward_train", ave_loss, self.epo)
-                    writer.add_scalar("ave_test_Loss/end_forward_test", test_loss, self.epo)
+                # if sign == 'inverse':
+                #     # writer.add_scalar("quantile/inverse_quantile", epoch_quantiles[-1], self.epo)
+                #     # writer.add_scalar("quantile/inverse_quantile_details", np.array(epoch_quantiles), np.arange(start=(self.epo) * len(epoch_quantiles), stop=(self.epo +1)* len(epoch_quantiles)))
+                #     writer.add_scalar("ave_train_Loss/end_inverse_train", ave_loss, self.epo)
+                #     writer.add_scalar("ave_test_Loss/end_inverse_test", test_loss, self.epo)
+                # elif sign == 'forward':
+                #     writer.add_scalar("ave_train_Loss/end_forward_train", ave_loss, self.epo)
+                #     writer.add_scalar("ave_test_Loss/end_forward_test", test_loss, self.epo)
 
             train_loss = 0.0
         self.epo += 1
@@ -322,8 +338,17 @@ class NN_predictor(object):
         self.x_val = None
         self.y_val = None
 
-    def load_dataset(self):
+    def load_dataset(self, dataset_path=None):
+        # Temporarily override self.data_dir for the specific agent file
+        original_data_dir = self.data_dir
+        if dataset_path:
+            self.data_dir = dataset_path
+
+        # Use generate_forward_dataset to load the dataset for the specific file
         train_data = generate_forward_dataset(self.data_dir, backward=self.backward, history=self.history)
+
+        # Restore original data_dir after loading
+        self.data_dir = original_data_dir
         
         # train val split
         split_point = int(train_data['x_train'].shape[0] * 0.8)
@@ -449,10 +474,7 @@ class NN_predictor(object):
 
 
 
-
-
-
-    def train(self, epochs, writer, sign):
+    def train(self, epochs, writer, sign, agent_num=None):
         train_loss = 0.0
         train_dataset = NN_dataset(self.x_train, self.y_train)
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
@@ -460,7 +482,10 @@ class NN_predictor(object):
             txt = 'inverse'
         else:
             txt = 'forward'
-        print(f"Epoch {self.epo - 1} Training")
+        if agent_num is not None:
+            print(f"Epoch {self.epo - 1} Training, Agent {agent_num}")
+        else:
+            print(f"Epoch {self.epo - 1} Training")
         # epoch_quantiles = []
         for e in range(epochs):
             record_quantile = []
@@ -507,28 +532,28 @@ class NN_predictor(object):
                 else:
                     test_loss = self.test(e, txt)
 
-                if sign == 'inverse':
-                    writer.add_scalar("ave_train_Loss/start_inverse_train", ave_loss, self.epo)
-                    writer.add_scalar("ave_test_Loss/start_inverse_test", test_loss, self.epo)
-                    # writer.add_scalar("quantile/inverse_quantile", epoch_quantiles[-1], self.epo)
-                    # writer.add_scalar("quantile/inverse_quantile_details", np.array(epoch_quantiles), np.arange(start=0, stop=(self.epo+1) * len(epoch_quantiles)))
-                elif sign == 'forward':
-                    writer.add_scalar("ave_train_Loss/start_forward_train", ave_loss, self.epo)
-                    writer.add_scalar("ave_test_Loss/start_forward_test", test_loss, self.epo)
+                # if sign == 'inverse':
+                #     writer.add_scalar("ave_train_Loss/start_inverse_train", ave_loss, self.epo)
+                #     writer.add_scalar("ave_test_Loss/start_inverse_test", test_loss, self.epo)
+                #     # writer.add_scalar("quantile/inverse_quantile", epoch_quantiles[-1], self.epo)
+                #     # writer.add_scalar("quantile/inverse_quantile_details", np.array(epoch_quantiles), np.arange(start=0, stop=(self.epo+1) * len(epoch_quantiles)))
+                # elif sign == 'forward':
+                #     writer.add_scalar("ave_train_Loss/start_forward_train", ave_loss, self.epo)
+                #     writer.add_scalar("ave_test_Loss/start_forward_test", test_loss, self.epo)
 
             elif e == epochs - 1:
                 ave_loss = train_loss / len(train_dataset)
                 self.logger.info(f'epoch {e}: {txt} train average loss {ave_loss}.')
                 test_loss = self.test(e, txt)
 
-                if sign == 'inverse':
-                    # writer.add_scalar("quantile/inverse_quantile", epoch_quantiles[-1], self.epo)
-                    # writer.add_scalar("quantile/inverse_quantile_details", np.array(epoch_quantiles), np.arange(start=(self.epo) * len(epoch_quantiles), stop=(self.epo +1)* len(epoch_quantiles)))
-                    writer.add_scalar("ave_train_Loss/end_inverse_train", ave_loss, self.epo)
-                    writer.add_scalar("ave_test_Loss/end_inverse_test", test_loss, self.epo)
-                elif sign == 'forward':
-                    writer.add_scalar("ave_train_Loss/end_forward_train", ave_loss, self.epo)
-                    writer.add_scalar("ave_test_Loss/end_forward_test", test_loss, self.epo)
+                # if sign == 'inverse':
+                #     # writer.add_scalar("quantile/inverse_quantile", epoch_quantiles[-1], self.epo)
+                #     # writer.add_scalar("quantile/inverse_quantile_details", np.array(epoch_quantiles), np.arange(start=(self.epo) * len(epoch_quantiles), stop=(self.epo +1)* len(epoch_quantiles)))
+                #     writer.add_scalar("ave_train_Loss/end_inverse_train", ave_loss, self.epo)
+                #     writer.add_scalar("ave_test_Loss/end_inverse_test", test_loss, self.epo)
+                # elif sign == 'forward':
+                #     writer.add_scalar("ave_train_Loss/end_forward_train", ave_loss, self.epo)
+                #     writer.add_scalar("ave_test_Loss/end_forward_test", test_loss, self.epo)
 
             train_loss = 0.0
         self.epo += 1
@@ -949,6 +974,7 @@ def generate_forward_dataset(file, action=8, backward=False, history=1):
     y_train = target[sample_idx]
     dataset = {'x_train': x_train, 'y_train': y_train}
     return dataset
+
 
 # def generate_forward_dataset(file, action=8, backward = False):
 #     with open(file, 'rb') as f:
