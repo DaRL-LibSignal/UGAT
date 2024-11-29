@@ -483,7 +483,7 @@ class NN_predictor(object):
         else:
             txt = 'forward'
         if agent_num is not None:
-            print(f"Epoch {self.epo - 1} Training, Agent {agent_num}")
+            self.logger.info(f'{txt} model, training agent {agent_num}.')
         else:
             print(f"Epoch {self.epo - 1} Training")
         # epoch_quantiles = []

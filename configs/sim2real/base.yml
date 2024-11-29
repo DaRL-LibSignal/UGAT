@@ -35,7 +35,7 @@ trainer:
   inverse_type: 'UNCERTAINTY' # or 'NN
   experiment_mode: 'restart'
   transfer_metric: False
-  decentralized_GAT: "centralized"
+  decentralized_GAT: "both"
 
 model:
   name: "non-rl"
