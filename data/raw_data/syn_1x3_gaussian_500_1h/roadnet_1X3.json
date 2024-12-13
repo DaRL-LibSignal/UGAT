@@ -6553,15 +6553,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_0_1",
@@ -6582,15 +6582,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_1_0",
@@ -6611,15 +6611,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_1_1",
@@ -6640,15 +6640,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_1_1",
@@ -6669,15 +6669,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_1_1",
@@ -6698,15 +6698,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_1_1",
@@ -6727,15 +6727,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_1_2",
@@ -6756,15 +6756,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_2_0",
@@ -6785,15 +6785,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_2_1",
@@ -6814,15 +6814,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_2_1",
@@ -6843,15 +6843,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_2_1",
@@ -6872,15 +6872,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_2_1",
@@ -6901,15 +6901,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_2_2",
@@ -6930,15 +6930,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_3_0",
@@ -6959,15 +6959,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_3_1",
@@ -6988,15 +6988,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_3_1",
@@ -7017,15 +7017,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_3_1",
@@ -7046,15 +7046,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_3_1",
@@ -7075,15 +7075,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_3_2",
@@ -7104,15 +7104,15 @@
       "lanes": [
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         },
         {
           "width": 4,
-          "maxSpeed": 11.111
+          "maxSpeed": 11.11
         }
       ],
       "startIntersection": "intersection_4_1",
