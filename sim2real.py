@@ -35,6 +35,7 @@ parser.add_argument('-n', '--network', type=str, default="cityflow1x3", help="ne
 parser.add_argument('-d', '--dataset', type=str, default='onfly', help='type of dataset in training process')
 parser.add_argument('--calculate_transfer_metrics', type=bool, default=False, help='enable transfer metric calculation')
 parser.add_argument('--decentralized_GAT', type=str, default="both", choices=['forward', 'inverse', 'both', 'centralized'], help='enable decentralized GAT by training forward, inverse, or both in a decentralized manner')
+parser.add_argument('--parameter_sharing', type=bool, default=True, help='Bool flag to set whether agents share a network')
 
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.ngpu

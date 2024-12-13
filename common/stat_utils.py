@@ -922,6 +922,9 @@ def generate_forward_dataset(file, action=8, backward=False, history=1):
 
                 target.append(y)
 
+    # TODO FORWARD AND INVERSE TRAINING SETS ARE SETUP INCORRECTLY
+    # - Need to check if sim.pkl and real.pkl are being overwritten
+    # - Need to adjust code for forward and inverse model to handle centralized vs decentralized dataset generation
     else:
         num_agents = np.array(contents[0][0]).shape[1]  # Get number of agents (assumes shape is (time_steps, num_agents, observations))
         obs_per_agent = np.array(contents[0][0]).shape[2]  # Observations per agent
@@ -929,6 +932,12 @@ def generate_forward_dataset(file, action=8, backward=False, history=1):
         joint_action_size = action * num_agents  # Joint action size = action size * number of agents
 
         input_size = history * (joint_state_size + joint_action_size)  # Total input size
+
+        print(f"num_agents: {num_agents}")
+        print(f"obs_per_agent: {obs_per_agent}")
+        print(f"joint_state_size: {joint_state_size}")
+        print(f"joint_action_size: {joint_action_size}")
+        print(f"input_size: {input_size}")
 
         for e in range(contents[0].__len__()):
             seq = np.zeros((1, input_size))
@@ -964,12 +973,13 @@ def generate_forward_dataset(file, action=8, backward=False, history=1):
     feature= np.concatenate(feature, axis=0)
     target = np.concatenate(target, axis=0)
     
-    # print(f"feature shape: {feature.shape}")
-    # print(f"target shape: {target.shape}")
+    print(f"feature shape: {feature.shape}")
+    print(f"target shape: {target.shape}")
 
     total_idx = len(target)
     sample_idx = range(total_idx)
     sample_idx = random.sample(sample_idx, len(sample_idx))
+
     x_train = feature[sample_idx]
     y_train = target[sample_idx]
     dataset = {'x_train': x_train, 'y_train': y_train}

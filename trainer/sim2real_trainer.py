@@ -4,6 +4,7 @@ import sys
 import time
 import pickle as pkl
 import numpy as np
+import random
 from common.metrics import Metrics
 from environment import TSCEnv
 from common.registry import Registry
@@ -12,11 +13,13 @@ from trainer.base_trainer import BaseTrainer
 from common import interface
 from common.stat_utils import NN_predictor, UNCERTAINTY_predictor
 from agent.utils import idx2onehot
+from collections import deque
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch
 import torch.nn.functional as F
 from  torch import optim, nn
+from torch.nn.utils import clip_grad_norm_
 
 @Registry.register_trainer("sim2real")
 class SIM2REALTrainer(BaseTrainer):
@@ -54,6 +57,7 @@ class SIM2REALTrainer(BaseTrainer):
 
         self.transfer_metric = Registry.mapping['trainer_mapping']['setting'].param['transfer_metric']
         self.decentralized_GAT = Registry.mapping['trainer_mapping']['setting'].param['decentralized_GAT']
+        self.parameter_sharing = Registry.mapping['trainer_mapping']['setting'].param['parameter_sharing']
 
         self.learning_rate = 0.0001 # set for before sim2real manually
 
@@ -120,6 +124,44 @@ class SIM2REALTrainer(BaseTrainer):
         self.metric_sim = Metrics(lane_metrics, world_metrics, self.world_sim, self.agents_sim)
         self.metric_real = Metrics(lane_metrics, world_metrics, self.world_real, self.agents_real)
 
+    def verify_agent_networks(self, agents):
+        """
+        Verify whether all agents have the same network.
+
+        :param agents: List of agents whose networks are to be compared.
+        :return: Boolean indicating if all agents have the same network and details of differences if any.
+        """
+        if not agents:
+            print("No agents to compare.")
+            return False
+
+        # Extract the network (architecture and weights) of the first agent as a reference
+        reference_network = agents[0].model  # Assuming `network` holds the model object
+
+        for idx, agent in enumerate(agents[1:], start=1):
+            current_network = agent.model  # Assuming `network` holds the model object
+
+            # Check if the architectures are the same
+            if str(reference_network) != str(current_network):
+                print(f"Agent {idx} has a different architecture.")
+                return False
+
+            # Check if the weights are the same
+            for ref_param, curr_param in zip(reference_network.parameters(), current_network.parameters()):
+                if not torch.equal(ref_param.data, curr_param.data):
+                    print(f"Agent {idx} has different weights.")
+                    return False
+
+        print("All agents have the same network")
+        return True
+    
+    def check_agent_networks(self):
+        print("\nVerifying simulation agents...")
+        same_sim = self.verify_agent_networks(self.agents_sim)
+
+        print("\nVerifying real agents...")
+        same_real = self.verify_agent_networks(self.agents_real)
+
     def create_agents(self):
         '''
         create_agents
@@ -129,28 +171,61 @@ class SIM2REALTrainer(BaseTrainer):
         :return: None
         '''
         self.agents_sim = []
-        agent_sim = Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
+        self.agents_real = []
+
+        # Copy same network for all agents if parameter sharing
+        if self.parameter_sharing:
+            print(f"Creating agents ")
+
+            agent_sim = Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
             self.world_sim, 0)
 
-        num_agent = int(len(self.world_sim.intersections) / agent_sim.sub_agents)
-        print(f"Total number of agents: {num_agent}, Total number of sub agents: {agent_sim.sub_agents}")
-        self.agents_sim.append(agent_sim)  # initialized N agents for traffic light control
+            self.agents_sim.append(agent_sim)
 
-        for i in range(1, num_agent):
-            self.agents_sim.append(
-                Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
-                    self.world_sim, i))
+            num_agent = int(len(self.world_sim.intersections) / agent_sim.sub_agents)
+            print(f"Total number of agents: {num_agent}, Total number of sub agents: {agent_sim.sub_agents}")
 
-        self.agents_real = []
-        agent_real = Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
-            self.world_real, 0)
+            # Copy agent n times, one for each desired agent
+            for i in range(1, num_agent):
+                self.agents_sim.append(Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
+                self.world_sim, i))
 
-        num_agent = int(len(self.world_real.intersections) / agent_real.sub_agents)
-        self.agents_real.append(agent_real)  # initialized N agents for traffic light control
-        for i in range(1, num_agent):
-            self.agents_real.append(
-                Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
-                    self.world_real, i))
+            agent_real = Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
+                self.world_real, 0)
+            
+            self.agents_real.append(agent_real)
+            
+            for i in range(1, num_agent):
+                self.agents_real.append(Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
+                self.world_real, i))
+
+        else:
+
+            agent_sim = Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
+                self.world_sim, 0)
+            
+            num_agent = int(len(self.world_sim.intersections) / agent_sim.sub_agents)
+            
+            print(f"Total number of agents: {num_agent}, Total number of sub agents: {agent_sim.sub_agents}")
+            self.agents_sim.append(agent_sim)  # initialized N agents for traffic light control
+
+            for i in range(1, num_agent):
+                self.agents_sim.append(
+                    Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
+                        self.world_sim, i))
+                
+            agent_real = Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
+                self.world_real, 0)
+
+            num_agent = int(len(self.world_real.intersections) / agent_real.sub_agents)
+            self.agents_real.append(agent_real)  # initialized N agents for traffic light control
+            for i in range(1, num_agent):
+                self.agents_real.append(
+                    Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
+                        self.world_real, i))
+            
+        # Added functionality to check whether agents share parameters
+        #self.check_agent_networks()
 
 
     def create_env(self):
@@ -164,6 +239,7 @@ class SIM2REALTrainer(BaseTrainer):
         # TODO: finalized list or non list
         self.env_sim = TSCEnv(self.world_sim, self.agents_sim, self.metric_sim)
         self.env_real = TSCEnv(self.world_real, self.agents_real, self.metric_real)
+    
 
     def run(self):
         global e
@@ -177,6 +253,12 @@ class SIM2REALTrainer(BaseTrainer):
         self.debug_path = os.path.join(self.root_path, 'debug')
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+        # Set all agent networks to be the same if centralized
+        # if self.parameter_sharing:
+        #     path = self.model_path + "-1_0.pt"
+        #     self.load_pretrained(path)
+        
+
         self.forward_models = []
         self.inverse_models = []
 
@@ -186,6 +268,7 @@ class SIM2REALTrainer(BaseTrainer):
             os.mkdir(self.data_path)
         if not os.path.exists(self.debug_path):
             os.mkdir(self.debug_path)
+
         # TODO: support multiple intersections
         if self.INVERSE == 'NN':
             # TODO: support multiple intersections
@@ -262,7 +345,7 @@ class SIM2REALTrainer(BaseTrainer):
 
         #'pretrained'/'restart'
         if self.experiment_mode == 'pretrained': 
-            path = 'data/output_data/sim2real/cityflow_dqn/cityflow1x1/report/s_model_collect/-1_0.pt'
+            path = self.model_path
 
         elif self.experiment_mode =='restart':
             path = self.pretrain(episodes=self.pretrain_n)
@@ -281,6 +364,8 @@ class SIM2REALTrainer(BaseTrainer):
         V = []
         for e in range(self.episodes):
             self.load_pretrained(path)  # load both on the sim and real
+            
+            #self.check_agent_networks()
 
             # first rollout
 
@@ -313,19 +398,25 @@ class SIM2REALTrainer(BaseTrainer):
                     _ = self.inverse_train(writer=self.writer)
                     
                     # sim2real training
+                    sim_rollout_time = time.time()
                     path = self.sim_tain(episode=20, e=e, writer=self.writer)
+                    end_time = time.time()
+                    print(f"Sim rollout time: {end_time - sim_rollout_time}, avg time per rollout: {end_time / 20}")
 
                 # Train forward and inverse models separately for each agent for decentralized GAT
                 elif self.decentralized_GAT == "both":
                         
                     # train forward model
-                    self.forward_train(writer=self.writer)
+                    #self.forward_train(writer=self.writer)
 
                     # train inverse model
-                    _ = self.inverse_train(writer=self.writer)
+                    #_ = self.inverse_train(writer=self.writer)
                     
                     # sim2real training
+                    sim_rollout_time = time.time()
                     path = self.decentralized_sim_train(episode=20, e=e, writer=self.writer)
+                    end_time = time.time()
+                    print(f"Sim rollout time: {end_time - sim_rollout_time}, avg time per rollout: {(end_time - sim_rollout_time) / 20}")
             
             else:
 
@@ -365,6 +456,9 @@ class SIM2REALTrainer(BaseTrainer):
         flush = 0
         states_record = []
         action_record = []
+
+        self.centralized_pretrain_replay_buffer = deque(maxlen=self.buffer_size*len(self.agents_sim))
+        
         for e in range(pretrained_episode):
             # TODO: check this reset agent
             self.metric_sim.clear()
@@ -403,8 +497,10 @@ class SIM2REALTrainer(BaseTrainer):
                     epo_states_record.append(obs[0])
                     cur_phase = np.stack([ag.get_phase() for ag in self.agents_sim])
                     for idx, ag in enumerate(self.agents_sim):
-                        ag.remember(last_obs[idx], last_phase[idx], actions[idx], actions_prob[idx], rewards[idx],
-                                    obs[idx], cur_phase[idx], dones[idx], f'{e}_{i // self.action_interval}_{ag.id}')
+                        self.centralized_pretrain_replay_buffer.append((f'{e}_{i // self.action_interval}_{ag.id}', 
+                                                               (last_obs[idx], last_phase[idx], actions[idx], rewards[idx], obs[idx], cur_phase[idx])))
+                        # ag.remember(last_obs[idx], last_phase[idx], actions[idx], actions_prob[idx], rewards[idx],
+                        #             obs[idx], cur_phase[idx], dones[idx], f'{e}_{i // self.action_interval}_{ag.id}')
                     flush += 1
                     if flush == self.buffer_size - 1:
                         flush = 0
@@ -413,12 +509,14 @@ class SIM2REALTrainer(BaseTrainer):
                     last_obs = obs
                 if total_decision_num > self.learning_start and \
                         total_decision_num % self.update_model_rate == self.update_model_rate - 1:
-                    cur_loss_q = np.stack([ag.train() for ag in self.agents_sim])  # TODO: training
+                    q_loss = self.train_shared_net(self.centralized_pretrain_replay_buffer)
+                    #cur_loss_q = np.stack([ag.train() for ag in self.agents_sim])  # TODO: training
 
-                    episode_loss.append(cur_loss_q)
+                    episode_loss.append(q_loss)
                 if total_decision_num > self.learning_start and \
                         total_decision_num % self.update_target_rate == self.update_target_rate - 1:
-                    [ag.update_target_network() for ag in self.agents_sim]
+                    self.agents_sim[0].update_target_network()
+                    #[ag.update_target_network() for ag in self.agents_sim]
 
                 if all(dones):
                     break
@@ -435,11 +533,11 @@ class SIM2REALTrainer(BaseTrainer):
                           mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
                           self.metric_sim.throughput())
 
-        model_path = self.agents_sim[-1].save_model(e=-1)
+        model_path = self.agents_sim[0].save_model(e=-1)
 
         return model_path
     
-
+    # TODO Add logging info to measure time of forward + inverse
     def decentralized_sim_train(self, episode, e, writer):
         action_diff = []
         action_distribution = []
@@ -447,6 +545,8 @@ class SIM2REALTrainer(BaseTrainer):
 
         total_decision_num = 0
         [ag.replay_buffer.clear() for ag in self.agents_sim]
+
+        self.centralized_replay_buffer = deque(maxlen=self.buffer_size*len(self.agents_sim))
 
         # Sets threshold for inverse model
         if self.INVERSE == 'UNCERTAINTY':
@@ -557,7 +657,7 @@ class SIM2REALTrainer(BaseTrainer):
                     if uncertainty.detach().item() < self.alpha:
                         rewards_list = []
                         for _ in range(self.action_interval):
-                            obs, rewards, dones, _ = self.env_sim.step(joint_action)  # Centralized step
+                            obs, rewards, dones, _ = self.env_sim.step(joint_action)  # Environment step
                             i += 1
                             rewards_list.append(np.stack(rewards))
 
@@ -574,7 +674,7 @@ class SIM2REALTrainer(BaseTrainer):
                         rewards_list = []
 
                         for _ in range(self.action_interval):
-                            obs, rewards, dones, _ = self.env_sim.step(actions_cold)  # Centralized step
+                            obs, rewards, dones, _ = self.env_sim.step(actions_cold)  # Environment step
                             i += 1
                             rewards_list.append(np.stack(rewards))
                         rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
@@ -582,21 +682,32 @@ class SIM2REALTrainer(BaseTrainer):
                         self.metric_sim.update(rewards)
                         cur_phase = np.stack([ag.get_phase() for ag in self.agents_sim])
                         for idx, ag in enumerate(self.agents_sim):
-                            ag.remember(last_obs[idx], last_phase[idx], actions[idx], actions_prob[idx],
-                                        rewards[idx], obs[idx], cur_phase[idx], dones[idx], f'{e}_{i // self.action_interval}_{ag.id}')
+
+                            self.centralized_replay_buffer.append((f'{e}_{i // self.action_interval}_{ag.id}', (last_obs[idx], last_phase[idx], actions[idx], rewards[idx], obs[idx], cur_phase[idx])))
+
+                            # ag.remember(last_obs[idx], last_phase[idx], actions[idx], actions_prob[idx],
+                            #             rewards[idx], obs[idx], cur_phase[idx], dones[idx], f'{e}_{i // self.action_interval}_{ag.id}')
 
                     total_decision_num += 1
                     last_obs = obs
 
+                # Modified to have all agent experiences train and update the main network
                 if total_decision_num > self.learning_start and \
                         total_decision_num % self.update_model_rate == self.update_model_rate - 1:
-                    # Training using the shared model
-                    cur_loss_q = np.stack([ag.train() for ag in self.agents_sim])  # Training all agents with a shared model
-                    episode_loss.append(cur_loss_q)
+                    
+                    #print(f"Agent: {idx}, step: {i}, total_decision_num: {total_decision_num}, self.update_model_rate: {self.update_model_rate}, replay buffer: {len(ag.replay_buffer)}, first: {ag.replay_buffer[0]}")
+                    q_loss = self.train_shared_net(self.centralized_replay_buffer)
 
+                    #cur_loss_q = np.stack([ag.train() for ag in self.agents_sim])
+                    episode_loss.append(q_loss)
+
+                # Modified to have all agent experiences train and update the target network
                 if total_decision_num > self.learning_start and \
                         total_decision_num % self.update_target_rate == self.update_target_rate - 1:
-                    [ag.update_target_network() for ag in self.agents_sim]  # Shared target network update
+                    
+                    self.agents_sim[0].update_target_network() # Update shared target network
+
+                    #[ag.update_target_network() for ag in self.agents_sim]
 
                 if all(dones):
                     break
@@ -624,13 +735,13 @@ class SIM2REALTrainer(BaseTrainer):
                 temp = 0
                 action_uncertainty.append(temp)
 
-            self.logger.info("episode:{}/{}, real avg travel time:{}".format(ep, episode,
+            self.logger.info("episode:{}/{}, sim avg travel time:{}".format(ep, episode,
                                                                             self.metric_sim.real_average_travel_time()))
             self.writeLog("TRAIN", ep, self.metric_sim.real_average_travel_time(),
                         mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
                         self.metric_sim.throughput())
 
-        self.test(e=e)
+        #self.test(e=e)
         #writer.flush()
         act_dif = np.concatenate(action_diff)
 
@@ -644,14 +755,38 @@ class SIM2REALTrainer(BaseTrainer):
                 self.alpha = np.mean(act_uncertainty)
 
         np.save(os.path.join(self.debug_path, f'act_diff_{e}.npy'), act_dif)
-        model_path = self.agents_sim[-1].save_model(e=e)
+        model_path = self.agents_sim[0].save_model(e=e)
         return model_path
+    
+
+    # Train the shared network
+    def train_shared_net(self, replay_buffer):
+
+        active_agent = self.agents_sim[0]
+
+        # Randomly sample from shared experience replay
+        samples = random.sample(replay_buffer, 64)
+        b_t, b_tp, rewards, actions = active_agent._batchwise(samples)
+
+        # Use agent 1 train functionality to train shared network for convenience in code
+        out = active_agent.target_model(b_tp, train=False)
+        target = rewards + active_agent.gamma * torch.max(out, dim=1)[0]
+        target_f = active_agent.model(b_t, train=False)
+        for i, action in enumerate(actions):
+            target_f[i][action] = target[i]
+        loss = active_agent.criterion(active_agent.model(b_t, train=True), target_f)
+        active_agent.optimizer.zero_grad()
+        loss.backward()
+        clip_grad_norm_(active_agent.model.parameters(), active_agent.grad_clip)
+        active_agent.optimizer.step()
+        if active_agent.epsilon > active_agent.epsilon_min:
+            active_agent.epsilon *= active_agent.epsilon_decay
+
+        return loss.clone().detach().numpy()
 
 
 
-
-
-
+    # Loading is set up in a centralized way, all agents share a network
     def load_pretrained(self, model_path):
 
         base_path = sys.path[0] + "/"

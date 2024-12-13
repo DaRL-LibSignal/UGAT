@@ -36,6 +36,7 @@ trainer:
   experiment_mode: 'restart'
   transfer_metric: False
   decentralized_GAT: "both"
+  parameter_sharing: True
 
 model:
   name: "non-rl"

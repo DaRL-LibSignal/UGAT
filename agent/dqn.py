@@ -283,9 +283,9 @@ if mode == 'dqn':
                 model_name = os.path.join(Registry.mapping['logger_mapping']['path'].path,
                                           'model', f'{e}_{self.rank}.pt')
             self.model = self._build_model()
-            self.model.load_state_dict(torch.load(model_name))
+            self.model.load_state_dict(torch.load(model_name, weights_only=True))
             self.target_model = self._build_model()
-            self.target_model.load_state_dict(torch.load(model_name))
+            self.target_model.load_state_dict(torch.load(model_name, weights_only=True))
             self.optimizer = optim.RMSprop(self.model.parameters(),
                                            lr=self.learning_rate,
                                            alpha=0.9, centered=False, eps=1e-7)
