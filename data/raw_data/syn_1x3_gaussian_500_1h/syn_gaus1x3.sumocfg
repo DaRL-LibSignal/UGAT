@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
 	<input>
-		<net-file value="hangzhou_1x3.net.xml"/>
-		<route-files value="hangzhou_1x3.rou.xml"/>
+		<net-file value="sumo_gaus1x3.net.xml"/>
+		<route-files value="sumo_gaus1x3.rou.xml"/>
 	</input>
 	<time>
 		<begin value="0"/>

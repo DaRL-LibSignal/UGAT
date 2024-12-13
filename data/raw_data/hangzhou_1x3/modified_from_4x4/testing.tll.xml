@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2024-12-09 10:52:52 by Eclipse SUMO netedit Version 1.21.0
+<neteditConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/neteditConfiguration.xsd">
+
+    <input>
+        <sumocfg-file value="/home/local/ASURITE/jturnau/UGAT_current/data/raw_data/hangzhou_1x3/modified_from_4x4/sumo1x3.sumocfg"/>
+        <additional-files value="/home/local/ASURITE/jturnau/UGAT_current/data/raw_data/hangzhou_1x3/modified_from_4x4/sumo1x3.add.xml"/>
+        <route-files value="/home/local/ASURITE/jturnau/UGAT_current/data/raw_data/hangzhou_1x3/modified_from_4x4/sumo1x3.rou.xml"/>
+        <data-files value="/home/local/ASURITE/jturnau/UGAT_current/data/raw_data/hangzhou_1x3/modified_from_4x4/test.dat.xml"/>
+        <sumo-net-file value="/home/local/ASURITE/jturnau/UGAT_current/data/raw_data/hangzhou_1x3/modified_from_4x4/hangzhou_1x3_reduced_from_4x4.net.xml"/>
+    </input>
+
+    <processing>
+        <geometry.min-radius.fix.railways value="false"/>
+        <geometry.max-grade.fix value="false"/>
+        <offset.disable-normalization value="true"/>
+        <lefthand value="0"/>
+    </processing>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+        <junctions.corner-detail value="5"/>
+        <junctions.limit-turn-speed value="5.50"/>
+        <rectangular-lane-cut value="0"/>
+    </junctions>
+
+    <pedestrian>
+        <walkingareas value="0"/>
+    </pedestrian>
+
+</neteditConfiguration>
+-->
+
+<tlLogics version="1.20" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/tllogic_file.xsd">
+    <tlLogic id="intersection_1_1" type="static" programID="0" offset="0">
+        <phase duration="30" state="GGGrrrrrrGGGGGGrrrGGGrrrrrrGGGGGGrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGGGGrrrGGGrrrrrrGGGGGGrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrGGGGGGrrrrrrGGGrrrGGG"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrGGGGGGrrrrrrGGGrrrGGGGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrrrrGGGrrrrrrGGGGGGGGG"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGGGGGGGGGGrrrrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrrrrGGGGGGGGGGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGGGGGGGGGGrrrrrrGGGrrrrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+    </tlLogic>
+    <tlLogic id="intersection_2_1" type="static" programID="0" offset="0">
+        <phase duration="30" state="GGGrrrrrrGGGGGGrrrGGGrrrrrrGGGGGGrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGGGGrrrGGGrrrrrrGGGGGGrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrGGGGGGrrrrrrGGGrrrGGG"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrGGGGGGrrrrrrGGGrrrGGGGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrrrrGGGrrrrrrGGGGGGGGG"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGGGGGGGGGGrrrrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrrrrGGGGGGGGGGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGGGGGGGGGGrrrrrrGGGrrrrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+    </tlLogic>
+    <tlLogic id="intersection_3_1" type="static" programID="0" offset="0">
+        <phase duration="30" state="GGGrrrrrrGGGGGGrrrGGGrrrrrrGGGGGGrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGGGGrrrGGGrrrrrrGGGGGGrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrGGGGGGrrrrrrGGGrrrGGG"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrGGGGGGrrrrrrGGGrrrGGGGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrrrrGGGrrrrrrGGGGGGGGG"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGGGGGGGGGGrrrrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrGGGrrrrrrGGGGGGGGGGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+        <phase duration="30" state="GGGGGGGGGGGGrrrrrrGGGrrrrrrGGGrrrrrr"/>
+        <phase duration="5"  state="sssrrrrrrsssrrrrrrsssrrrrrrsssrrrrrr"/>
+    </tlLogic>
+
+    <connection from="road_0_1_0" to="road_1_1_3" fromLane="0" toLane="0" tl="intersection_1_1" linkIndex="27"/>
+    <connection from="road_0_1_0" to="road_1_1_3" fromLane="0" toLane="1" tl="intersection_1_1" linkIndex="28"/>
+    <connection from="road_0_1_0" to="road_1_1_3" fromLane="0" toLane="2" tl="intersection_1_1" linkIndex="29"/>
+    <connection from="road_0_1_0" to="road_1_1_0" fromLane="1" toLane="0" tl="intersection_1_1" linkIndex="30"/>
+    <connection from="road_0_1_0" to="road_1_1_0" fromLane="1" toLane="1" tl="intersection_1_1" linkIndex="31"/>
+    <connection from="road_0_1_0" to="road_1_1_0" fromLane="1" toLane="2" tl="intersection_1_1" linkIndex="32"/>
+    <connection from="road_0_1_0" to="road_1_1_1" fromLane="2" toLane="0" tl="intersection_1_1" linkIndex="33"/>
+    <connection from="road_0_1_0" to="road_1_1_1" fromLane="2" toLane="1" tl="intersection_1_1" linkIndex="34"/>
+    <connection from="road_0_1_0" to="road_1_1_1" fromLane="2" toLane="2" tl="intersection_1_1" linkIndex="35"/>
+    <connection from="road_1_0_1" to="road_1_1_0" fromLane="0" toLane="0" tl="intersection_1_1" linkIndex="18"/>
+    <connection from="road_1_0_1" to="road_1_1_0" fromLane="0" toLane="1" tl="intersection_1_1" linkIndex="19"/>
+    <connection from="road_1_0_1" to="road_1_1_0" fromLane="0" toLane="2" tl="intersection_1_1" linkIndex="20"/>
+    <connection from="road_1_0_1" to="road_1_1_1" fromLane="1" toLane="0" tl="intersection_1_1" linkIndex="21"/>
+    <connection from="road_1_0_1" to="road_1_1_1" fromLane="1" toLane="1" tl="intersection_1_1" linkIndex="22"/>
+    <connection from="road_1_0_1" to="road_1_1_1" fromLane="1" toLane="2" tl="intersection_1_1" linkIndex="23"/>
+    <connection from="road_1_0_1" to="road_1_1_2" fromLane="2" toLane="0" tl="intersection_1_1" linkIndex="24"/>
+    <connection from="road_1_0_1" to="road_1_1_2" fromLane="2" toLane="1" tl="intersection_1_1" linkIndex="25"/>
+    <connection from="road_1_0_1" to="road_1_1_2" fromLane="2" toLane="2" tl="intersection_1_1" linkIndex="26"/>
+    <connection from="road_1_1_0" to="road_2_1_3" fromLane="0" toLane="0" tl="intersection_2_1" linkIndex="27"/>
+    <connection from="road_1_1_0" to="road_2_1_3" fromLane="0" toLane="1" tl="intersection_2_1" linkIndex="28"/>
+    <connection from="road_1_1_0" to="road_2_1_3" fromLane="0" toLane="2" tl="intersection_2_1" linkIndex="29"/>
+    <connection from="road_1_1_0" to="road_2_1_0" fromLane="1" toLane="0" tl="intersection_2_1" linkIndex="30"/>
+    <connection from="road_1_1_0" to="road_2_1_0" fromLane="1" toLane="1" tl="intersection_2_1" linkIndex="31"/>
+    <connection from="road_1_1_0" to="road_2_1_0" fromLane="1" toLane="2" tl="intersection_2_1" linkIndex="32"/>
+    <connection from="road_1_1_0" to="road_2_1_1" fromLane="2" toLane="0" tl="intersection_2_1" linkIndex="33"/>
+    <connection from="road_1_1_0" to="road_2_1_1" fromLane="2" toLane="1" tl="intersection_2_1" linkIndex="34"/>
+    <connection from="road_1_1_0" to="road_2_1_1" fromLane="2" toLane="2" tl="intersection_2_1" linkIndex="35"/>
+    <connection from="road_1_2_3" to="road_1_1_2" fromLane="0" toLane="0" tl="intersection_1_1" linkIndex="0"/>
+    <connection from="road_1_2_3" to="road_1_1_2" fromLane="0" toLane="1" tl="intersection_1_1" linkIndex="1"/>
+    <connection from="road_1_2_3" to="road_1_1_2" fromLane="0" toLane="2" tl="intersection_1_1" linkIndex="2"/>
+    <connection from="road_1_2_3" to="road_1_1_3" fromLane="1" toLane="0" tl="intersection_1_1" linkIndex="3"/>
+    <connection from="road_1_2_3" to="road_1_1_3" fromLane="1" toLane="1" tl="intersection_1_1" linkIndex="4"/>
+    <connection from="road_1_2_3" to="road_1_1_3" fromLane="1" toLane="2" tl="intersection_1_1" linkIndex="5"/>
+    <connection from="road_1_2_3" to="road_1_1_0" fromLane="2" toLane="0" tl="intersection_1_1" linkIndex="6"/>
+    <connection from="road_1_2_3" to="road_1_1_0" fromLane="2" toLane="1" tl="intersection_1_1" linkIndex="7"/>
+    <connection from="road_1_2_3" to="road_1_1_0" fromLane="2" toLane="2" tl="intersection_1_1" linkIndex="8"/>
+    <connection from="road_2_0_1" to="road_2_1_0" fromLane="0" toLane="0" tl="intersection_2_1" linkIndex="18"/>
+    <connection from="road_2_0_1" to="road_2_1_0" fromLane="0" toLane="1" tl="intersection_2_1" linkIndex="19"/>
+    <connection from="road_2_0_1" to="road_2_1_0" fromLane="0" toLane="2" tl="intersection_2_1" linkIndex="20"/>
+    <connection from="road_2_0_1" to="road_2_1_1" fromLane="1" toLane="0" tl="intersection_2_1" linkIndex="21"/>
+    <connection from="road_2_0_1" to="road_2_1_1" fromLane="1" toLane="1" tl="intersection_2_1" linkIndex="22"/>
+    <connection from="road_2_0_1" to="road_2_1_1" fromLane="1" toLane="2" tl="intersection_2_1" linkIndex="23"/>
+    <connection from="road_2_0_1" to="road_2_1_2" fromLane="2" toLane="0" tl="intersection_2_1" linkIndex="24"/>
+    <connection from="road_2_0_1" to="road_2_1_2" fromLane="2" toLane="1" tl="intersection_2_1" linkIndex="25"/>
+    <connection from="road_2_0_1" to="road_2_1_2" fromLane="2" toLane="2" tl="intersection_2_1" linkIndex="26"/>
+    <connection from="road_2_1_0" to="road_3_1_3" fromLane="0" toLane="0" tl="intersection_3_1" linkIndex="27"/>
+    <connection from="road_2_1_0" to="road_3_1_3" fromLane="0" toLane="1" tl="intersection_3_1" linkIndex="28"/>
+    <connection from="road_2_1_0" to="road_3_1_3" fromLane="0" toLane="2" tl="intersection_3_1" linkIndex="29"/>
+    <connection from="road_2_1_0" to="road_3_1_0" fromLane="1" toLane="0" tl="intersection_3_1" linkIndex="30"/>
+    <connection from="road_2_1_0" to="road_3_1_0" fromLane="1" toLane="1" tl="intersection_3_1" linkIndex="31"/>
+    <connection from="road_2_1_0" to="road_3_1_0" fromLane="1" toLane="2" tl="intersection_3_1" linkIndex="32"/>
+    <connection from="road_2_1_0" to="road_3_1_1" fromLane="2" toLane="0" tl="intersection_3_1" linkIndex="33"/>
+    <connection from="road_2_1_0" to="road_3_1_1" fromLane="2" toLane="1" tl="intersection_3_1" linkIndex="34"/>
+    <connection from="road_2_1_0" to="road_3_1_1" fromLane="2" toLane="2" tl="intersection_3_1" linkIndex="35"/>
+    <connection from="road_2_1_2" to="road_1_1_1" fromLane="0" toLane="0" tl="intersection_1_1" linkIndex="9"/>
+    <connection from="road_2_1_2" to="road_1_1_1" fromLane="0" toLane="1" tl="intersection_1_1" linkIndex="10"/>
+    <connection from="road_2_1_2" to="road_1_1_1" fromLane="0" toLane="2" tl="intersection_1_1" linkIndex="11"/>
+    <connection from="road_2_1_2" to="road_1_1_2" fromLane="1" toLane="0" tl="intersection_1_1" linkIndex="12"/>
+    <connection from="road_2_1_2" to="road_1_1_2" fromLane="1" toLane="1" tl="intersection_1_1" linkIndex="13"/>
+    <connection from="road_2_1_2" to="road_1_1_2" fromLane="1" toLane="2" tl="intersection_1_1" linkIndex="14"/>
+    <connection from="road_2_1_2" to="road_1_1_3" fromLane="2" toLane="0" tl="intersection_1_1" linkIndex="15"/>
+    <connection from="road_2_1_2" to="road_1_1_3" fromLane="2" toLane="1" tl="intersection_1_1" linkIndex="16"/>
+    <connection from="road_2_1_2" to="road_1_1_3" fromLane="2" toLane="2" tl="intersection_1_1" linkIndex="17"/>
+    <connection from="road_2_2_3" to="road_2_1_2" fromLane="0" toLane="0" tl="intersection_2_1" linkIndex="0"/>
+    <connection from="road_2_2_3" to="road_2_1_2" fromLane="0" toLane="1" tl="intersection_2_1" linkIndex="1"/>
+    <connection from="road_2_2_3" to="road_2_1_2" fromLane="0" toLane="2" tl="intersection_2_1" linkIndex="2"/>
+    <connection from="road_2_2_3" to="road_2_1_3" fromLane="1" toLane="0" tl="intersection_2_1" linkIndex="3"/>
+    <connection from="road_2_2_3" to="road_2_1_3" fromLane="1" toLane="1" tl="intersection_2_1" linkIndex="4"/>
+    <connection from="road_2_2_3" to="road_2_1_3" fromLane="1" toLane="2" tl="intersection_2_1" linkIndex="5"/>
+    <connection from="road_2_2_3" to="road_2_1_0" fromLane="2" toLane="0" tl="intersection_2_1" linkIndex="6"/>
+    <connection from="road_2_2_3" to="road_2_1_0" fromLane="2" toLane="1" tl="intersection_2_1" linkIndex="7"/>
+    <connection from="road_2_2_3" to="road_2_1_0" fromLane="2" toLane="2" tl="intersection_2_1" linkIndex="8"/>
+    <connection from="road_3_0_1" to="road_3_1_0" fromLane="0" toLane="0" tl="intersection_3_1" linkIndex="18"/>
+    <connection from="road_3_0_1" to="road_3_1_0" fromLane="0" toLane="1" tl="intersection_3_1" linkIndex="19"/>
+    <connection from="road_3_0_1" to="road_3_1_0" fromLane="0" toLane="2" tl="intersection_3_1" linkIndex="20"/>
+    <connection from="road_3_0_1" to="road_3_1_1" fromLane="1" toLane="0" tl="intersection_3_1" linkIndex="21"/>
+    <connection from="road_3_0_1" to="road_3_1_1" fromLane="1" toLane="1" tl="intersection_3_1" linkIndex="22"/>
+    <connection from="road_3_0_1" to="road_3_1_1" fromLane="1" toLane="2" tl="intersection_3_1" linkIndex="23"/>
+    <connection from="road_3_0_1" to="road_3_1_2" fromLane="2" toLane="0" tl="intersection_3_1" linkIndex="24"/>
+    <connection from="road_3_0_1" to="road_3_1_2" fromLane="2" toLane="1" tl="intersection_3_1" linkIndex="25"/>
+    <connection from="road_3_0_1" to="road_3_1_2" fromLane="2" toLane="2" tl="intersection_3_1" linkIndex="26"/>
+    <connection from="road_3_1_2" to="road_2_1_1" fromLane="0" toLane="0" tl="intersection_2_1" linkIndex="9"/>
+    <connection from="road_3_1_2" to="road_2_1_1" fromLane="0" toLane="1" tl="intersection_2_1" linkIndex="10"/>
+    <connection from="road_3_1_2" to="road_2_1_1" fromLane="0" toLane="2" tl="intersection_2_1" linkIndex="11"/>
+    <connection from="road_3_1_2" to="road_2_1_2" fromLane="1" toLane="0" tl="intersection_2_1" linkIndex="12"/>
+    <connection from="road_3_1_2" to="road_2_1_2" fromLane="1" toLane="1" tl="intersection_2_1" linkIndex="13"/>
+    <connection from="road_3_1_2" to="road_2_1_2" fromLane="1" toLane="2" tl="intersection_2_1" linkIndex="14"/>
+    <connection from="road_3_1_2" to="road_2_1_3" fromLane="2" toLane="0" tl="intersection_2_1" linkIndex="15"/>
+    <connection from="road_3_1_2" to="road_2_1_3" fromLane="2" toLane="1" tl="intersection_2_1" linkIndex="16"/>
+    <connection from="road_3_1_2" to="road_2_1_3" fromLane="2" toLane="2" tl="intersection_2_1" linkIndex="17"/>
+    <connection from="road_3_2_3" to="road_3_1_2" fromLane="0" toLane="0" tl="intersection_3_1" linkIndex="0"/>
+    <connection from="road_3_2_3" to="road_3_1_2" fromLane="0" toLane="1" tl="intersection_3_1" linkIndex="1"/>
+    <connection from="road_3_2_3" to="road_3_1_2" fromLane="0" toLane="2" tl="intersection_3_1" linkIndex="2"/>
+    <connection from="road_3_2_3" to="road_3_1_3" fromLane="1" toLane="0" tl="intersection_3_1" linkIndex="3"/>
+    <connection from="road_3_2_3" to="road_3_1_3" fromLane="1" toLane="1" tl="intersection_3_1" linkIndex="4"/>
+    <connection from="road_3_2_3" to="road_3_1_3" fromLane="1" toLane="2" tl="intersection_3_1" linkIndex="5"/>
+    <connection from="road_3_2_3" to="road_3_1_0" fromLane="2" toLane="0" tl="intersection_3_1" linkIndex="6"/>
+    <connection from="road_3_2_3" to="road_3_1_0" fromLane="2" toLane="1" tl="intersection_3_1" linkIndex="7"/>
+    <connection from="road_3_2_3" to="road_3_1_0" fromLane="2" toLane="2" tl="intersection_3_1" linkIndex="8"/>
+    <connection from="road_4_1_2" to="road_3_1_1" fromLane="0" toLane="0" tl="intersection_3_1" linkIndex="9"/>
+    <connection from="road_4_1_2" to="road_3_1_1" fromLane="0" toLane="1" tl="intersection_3_1" linkIndex="10"/>
+    <connection from="road_4_1_2" to="road_3_1_1" fromLane="0" toLane="2" tl="intersection_3_1" linkIndex="11"/>
+    <connection from="road_4_1_2" to="road_3_1_2" fromLane="1" toLane="0" tl="intersection_3_1" linkIndex="12"/>
+    <connection from="road_4_1_2" to="road_3_1_2" fromLane="1" toLane="1" tl="intersection_3_1" linkIndex="13"/>
+    <connection from="road_4_1_2" to="road_3_1_2" fromLane="1" toLane="2" tl="intersection_3_1" linkIndex="14"/>
+    <connection from="road_4_1_2" to="road_3_1_3" fromLane="2" toLane="0" tl="intersection_3_1" linkIndex="15"/>
+    <connection from="road_4_1_2" to="road_3_1_3" fromLane="2" toLane="1" tl="intersection_3_1" linkIndex="16"/>
+    <connection from="road_4_1_2" to="road_3_1_3" fromLane="2" toLane="2" tl="intersection_3_1" linkIndex="17"/>
+</tlLogics>

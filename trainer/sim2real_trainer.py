@@ -104,7 +104,7 @@ class SIM2REALTrainer(BaseTrainer):
             self.path, Registry.mapping['command_mapping']['setting'].param['thread_num'])
 
         self.world_real = Registry.mapping['world_mapping']['sumo'](
-            self.path.replace('cityflow', 'sumohz'),
+            self.path.replace('cityflow', 'sumo_gaus'),
             interface=Registry.mapping['command_mapping']['setting'].param['interface'])
 
     def create_metrics(self):
