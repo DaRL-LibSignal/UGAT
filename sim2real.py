@@ -10,7 +10,6 @@ from utils.logger import *
 import time
 from datetime import datetime
 import argparse
-
 import sys
 
 import torch
@@ -91,14 +90,19 @@ class Runner:
         interface.ModelAgent_param_Interface(self.config)
 
     def run(self):
-        logger = setup_logging(logging_level)
-        self.trainer = Registry.mapping['trainer_mapping'] \
-            [Registry.mapping['command_mapping']['setting'].param['task']](logger, self.config)
-        self.task = Registry.mapping['task_mapping'] \
-            [Registry.mapping['command_mapping']['setting'].param['task']](self.trainer)
-        start_time = time.time()
-        self.task.run()
-        logger.info(f"Total time taken: {time.time() - start_time}")
+        try:
+            logger = setup_logging(logging_level)
+            self.trainer = Registry.mapping['trainer_mapping'] \
+                [Registry.mapping['command_mapping']['setting'].param['task']](logger, self.config)
+            self.task = Registry.mapping['task_mapping'] \
+                [Registry.mapping['command_mapping']['setting'].param['task']](self.trainer)
+            start_time = time.time()
+            self.task.run()
+            logger.info(f"Total time taken: {time.time() - start_time}")
+        except Exception as e:
+            logger.error(f"An error occurred during run: {e}", exc_info=True)
+            logger.info(f"Total time taken: {time.time() - start_time}")
+
 
 
 if __name__ == '__main__':
