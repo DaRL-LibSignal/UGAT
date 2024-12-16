@@ -348,7 +348,7 @@ class SIM2REALTrainer(BaseTrainer):
             path = self.model_path
 
         elif self.experiment_mode =='restart':
-            path = self.pretrain(episodes=self.pretrain_n+5)
+            path = self.pretrain(episodes=self.pretrain_n) # previously has +5
 
         # collect trajectories for transfer metric
         if self.transfer_metric == True:
