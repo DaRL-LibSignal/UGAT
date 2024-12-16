@@ -49,9 +49,9 @@ model:
   learning_rate: 0.001
   batch_size: 64
   gamma: 0.98
-  epsilon: 1.0 # original:0.1
+  epsilon: 0.1 # original:0.1
   epsilon_decay: 0.9995
-  epsilon_min: 0.01 # original: 0.01
+  epsilon_min: 0.1 # original: 0.01
   grad_clip: 0.5
 
   one_hot: False
