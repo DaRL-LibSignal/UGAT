@@ -348,7 +348,7 @@ class SIM2REALTrainer(BaseTrainer):
             path = self.model_path
 
         elif self.experiment_mode =='restart':
-            path = self.pretrain(episodes=self.pretrain_n)
+            path = self.pretrain(episodes=self.pretrain_n+5)
 
         # collect trajectories for transfer metric
         if self.transfer_metric == True:
@@ -369,7 +369,7 @@ class SIM2REALTrainer(BaseTrainer):
 
             # first rollout
 
-            # If decentralized handle real rollout differently
+            # If decentralized handle real rollout differently?
             if self.decentralized_GAT == "both":
                 R = self.real_rollout(e - 1, True)
                 self.sim_rollout(e - 1, True)
@@ -414,12 +414,11 @@ class SIM2REALTrainer(BaseTrainer):
                     
                     # sim2real training
                     sim_rollout_time = time.time()
-                    path = self.decentralized_sim_train(episode=20, e=e, writer=self.writer)
+                    path = self.noGAT_sim_train(episode=20, e=e, writer=self.writer) # TODO THIS IS SETUP FOR NO GAT CURRENTLY, CHANGE LATER
                     end_time = time.time()
                     print(f"Sim rollout time: {end_time - sim_rollout_time}, avg time per rollout: {(end_time - sim_rollout_time) / 20}")
             
             else:
-
                 # Calculate transfer metric if flag is present
                 if self.config['command'].get('calculate_transfer_metrics', False):
                     # train forward model
@@ -473,13 +472,15 @@ class SIM2REALTrainer(BaseTrainer):
                 if i % self.action_interval == 0:
                     last_phase = np.stack([ag.get_phase() for ag in self.agents_sim])  # [agent, intersections]
 
-                    if total_decision_num > self.learning_start:
-                        actions = []
-                        for idx, ag in enumerate(self.agents_sim):
-                            actions.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))
-                        actions = np.stack(actions)  # [agent, intersections]
-                    else:
-                        actions = np.stack([ag.sample() for ag in self.agents_sim])
+                    # if total_decision_num > self.learning_start:
+                    #     actions = []
+                    #     for idx, ag in enumerate(self.agents_sim):
+                    #         actions.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))
+                    #     actions = np.stack(actions)  # [agent, intersections]
+                    # else:
+                    #     actions = np.stack([ag.sample() for ag in self.agents_sim])
+
+                    actions = np.stack([ag.sample() for ag in self.agents_sim])
 
                     actions_prob = []
                     for idx, ag in enumerate(self.agents_sim):
@@ -524,7 +525,7 @@ class SIM2REALTrainer(BaseTrainer):
                 mean_loss = np.mean(np.array(episode_loss))
             else:
                 mean_loss = 0
-            self.logger.info("episode:{}/{}, real avg travel time:{}".format(e, pretrained_episode,
+            self.logger.info("episode:{}/{}, pretrain sim avg travel time:{}".format(e, pretrained_episode,
                                                                              self.metric_sim.real_average_travel_time()))
 
             action_record.append(epo_action_record)
@@ -542,7 +543,6 @@ class SIM2REALTrainer(BaseTrainer):
         action_diff = []
         action_distribution = []
         action_uncertainty = []
-
         total_decision_num = 0
         [ag.replay_buffer.clear() for ag in self.agents_sim]
 
@@ -655,6 +655,7 @@ class SIM2REALTrainer(BaseTrainer):
                                 epoch_uncertainty.append(uncertainty)
 
                     if uncertainty.detach().item() < self.alpha:
+                        print(f"Should not be called right now")
                         rewards_list = []
                         for _ in range(self.action_interval):
                             obs, rewards, dones, _ = self.env_sim.step(joint_action)  # Environment step
@@ -708,9 +709,12 @@ class SIM2REALTrainer(BaseTrainer):
                     self.agents_sim[0].update_target_network() # Update shared target network
 
                     #[ag.update_target_network() for ag in self.agents_sim]
+            
 
                 if all(dones):
                     break
+            
+            
             if len(episode_loss) > 0:
                 mean_loss = np.mean(np.array(episode_loss))
             else:
@@ -740,6 +744,7 @@ class SIM2REALTrainer(BaseTrainer):
             self.writeLog("TRAIN", ep, self.metric_sim.real_average_travel_time(),
                         mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
                         self.metric_sim.throughput())
+            
 
         #self.test(e=e)
         #writer.flush()
@@ -753,6 +758,124 @@ class SIM2REALTrainer(BaseTrainer):
                 act_uncertainty = np.vstack(action_uncertainty)
                 np.save(os.path.join(self.debug_path, f'act_uncertainty_{e}.npy'), act_uncertainty)
                 self.alpha = np.mean(act_uncertainty)
+
+        np.save(os.path.join(self.debug_path, f'act_diff_{e}.npy'), act_dif)
+        model_path = self.agents_sim[0].save_model(e=e)
+        return model_path
+    
+
+    # TODO Add logging info to measure time of forward + inverse
+    def noGAT_sim_train(self, episode, e, writer):
+        action_diff = []
+        action_distribution = []
+        total_decision_num = 0
+        [ag.replay_buffer.clear() for ag in self.agents_sim]
+
+        self.centralized_replay_buffer = deque(maxlen=self.buffer_size*len(self.agents_sim))
+
+        # Sets threshold for inverse model
+        if self.INVERSE == 'UNCERTAINTY':
+            self.alpha = np.array([0.0])
+
+        for ep in range(episode):
+            epoch_diff = []
+            epoch_distribution = []
+            epoch_uncertainty = []
+
+            self.metric_sim.clear()
+            last_obs = self.env_sim.reset()
+            episode_loss = []
+            i = 0
+
+            # Changed input size to accommodate decentralized multi-agent scenario
+            input_size = (last_obs[0].shape[1] + 8) * self.HISTORY_T
+
+            # Initialize sequence for each agent
+            seq = [np.zeros((1, input_size)) for _ in range(len(self.agents_sim))]
+
+            while i < self.steps:
+                if i % self.action_interval == 0:
+                    last_phase = np.stack([ag.get_phase() for ag in self.agents_sim])  # [agent, intersections]
+
+                    actions_cold = []
+                    actions = []
+                    states = []
+                    joint_action = []
+                    actions_prob = []
+
+                    # Loop through agents gathering actions, action probs, and states
+                    for idx, ag in enumerate(self.agents_sim):
+                        # Get actions as one hot encoded over 8 possible actions
+                        actions_cold.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))
+                        action_onehot = idx2onehot(np.array(ag.get_action(last_obs[idx], last_phase[idx], test=False)), 8)
+                        actions.append(action_onehot)
+
+                        actions_prob.append(ag.get_action_prob(last_obs[idx], last_phase[idx]))
+
+                        states.append(last_obs[idx])
+
+                        # Create forward input specific to this agent
+                        # Construct the state-action pair for each agent
+                        agent_state = np.concatenate([states[idx].flatten(), actions[idx].flatten()]).flatten()  # Flatten actions
+
+                        seq[idx] = np.concatenate((seq[idx].flatten(), agent_state))  # Update sequence for this agent
+
+                    # Joint action for environment step (centralized)
+                    joint_action = np.concatenate(actions).flatten()
+
+                    # Same actions but not one hot for environment step (centralized)
+                    actions_cold = np.concatenate(actions_cold).flatten()
+
+                    epoch_diff.append(joint_action)
+                    rewards_list = []
+
+                    for _ in range(self.action_interval):
+                        obs, rewards, dones, _ = self.env_sim.step(actions_cold)  # Environment step
+                        i += 1
+                        rewards_list.append(np.stack(rewards))
+                    rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
+
+                    self.metric_sim.update(rewards)
+                    cur_phase = np.stack([ag.get_phase() for ag in self.agents_sim])
+                    for idx, ag in enumerate(self.agents_sim):
+
+                        self.centralized_replay_buffer.append((f'{e}_{i // self.action_interval}_{ag.id}', (last_obs[idx], last_phase[idx], actions[idx], rewards[idx], obs[idx], cur_phase[idx])))
+
+                    total_decision_num += 1
+                    last_obs = obs
+
+                # Modified to have all agent experiences train and update the main network
+                if total_decision_num > self.learning_start and \
+                        total_decision_num % self.update_model_rate == self.update_model_rate - 1:
+                    
+                    q_loss = self.train_shared_net(self.centralized_replay_buffer)
+                    episode_loss.append(q_loss)
+
+                # Modified to have all agent experiences train and update the target network
+                if total_decision_num > self.learning_start and \
+                        total_decision_num % self.update_target_rate == self.update_target_rate - 1:
+                    
+                    self.agents_sim[0].update_target_network() # Update shared target network
+            
+                if all(dones):
+                    break
+            
+            if len(episode_loss) > 0:
+                mean_loss = np.mean(np.array(episode_loss))
+            else:
+                mean_loss = 0
+
+            action_diff.append(epoch_diff)
+            action_distribution.append(epoch_distribution)
+
+            self.logger.info("episode:{}/{}, sim avg travel time:{}".format(ep, episode,
+                                                                            self.metric_sim.real_average_travel_time()))
+            self.writeLog("TRAIN", ep, self.metric_sim.real_average_travel_time(),
+                        mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
+                        self.metric_sim.throughput())
+            
+
+        act_dif = np.concatenate(action_diff)
 
         np.save(os.path.join(self.debug_path, f'act_diff_{e}.npy'), act_dif)
         model_path = self.agents_sim[0].save_model(e=e)
@@ -779,8 +902,11 @@ class SIM2REALTrainer(BaseTrainer):
         loss.backward()
         clip_grad_norm_(active_agent.model.parameters(), active_agent.grad_clip)
         active_agent.optimizer.step()
-        if active_agent.epsilon > active_agent.epsilon_min:
-            active_agent.epsilon *= active_agent.epsilon_decay
+
+        # Modify the decay rate for all agents at the same time for the multi-agent case
+        for ag in self.agents_sim:
+            if ag.epsilon > ag.epsilon_min:
+                ag.epsilon *= ag.epsilon_decay
 
         return loss.clone().detach().numpy()
 
@@ -982,6 +1108,7 @@ class SIM2REALTrainer(BaseTrainer):
 
 
     def forward_train(self, writer, transfer_calc=False):
+        print(f"SHOULD NOT BE HERE")
         if self.decentralized_GAT == "both":
             # Iterate over each agent's forward model
             for i, forward_model in enumerate(self.forward_models):
@@ -1270,7 +1397,7 @@ class SIM2REALTrainer(BaseTrainer):
 
 
     def real_eval(self, e):
-        # TODO: support multiple intersections
+        # TODO: already supports multiple intersections, 
         discount = 0.95
         self.metric_real.clear()
         R = np.array([0 for _ in self.agents_real])
