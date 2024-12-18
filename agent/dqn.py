@@ -25,7 +25,7 @@ if mode == 'dqn':
         DQNAgent determines each intersection's action with its own intersection information.
         '''
 
-        def __init__(self, world, rank):
+        def __init__(self, world, rank, sharenet=None):
             super().__init__(world, world.intersection_ids[rank])
             self.buffer_size = Registry.mapping['trainer_mapping']['setting'].param['buffer_size']
             self.replay_buffer = deque(maxlen=self.buffer_size)
@@ -57,23 +57,29 @@ if mode == 'dqn':
             else:
                 self.ob_length = self.ob_generator.ob_length
 
-            self.gamma = Registry.mapping['model_mapping']['setting'].param['gamma']
-            self.grad_clip = Registry.mapping['model_mapping']['setting'].param['grad_clip']
-            self.epsilon = Registry.mapping['model_mapping']['setting'].param['epsilon']
-            self.epsilon_decay = Registry.mapping['model_mapping']['setting'].param['epsilon_decay']
-            self.epsilon_min = Registry.mapping['model_mapping']['setting'].param['epsilon_min']
-            self.learning_rate = Registry.mapping['model_mapping']['setting'].param['learning_rate']
-            self.vehicle_max = Registry.mapping['model_mapping']['setting'].param['vehicle_max']
-            self.batch_size = Registry.mapping['model_mapping']['setting'].param['batch_size']
+            if sharenet is not None:
+                print(f"sharing net...")
+                return
 
-            self.model = self._build_model()
-            self.target_model = self._build_model()
-            self.update_target_network()
-            self.criterion = nn.MSELoss(reduction='mean')
-            self.optimizer = optim.RMSprop(self.model.parameters(),
-                                           lr=self.learning_rate,
-                                           alpha=0.9, centered=False, eps=1e-7)
+            else:
+                self.gamma = Registry.mapping['model_mapping']['setting'].param['gamma']
+                self.grad_clip = Registry.mapping['model_mapping']['setting'].param['grad_clip']
+                self.epsilon = Registry.mapping['model_mapping']['setting'].param['epsilon']
+                self.epsilon_decay = Registry.mapping['model_mapping']['setting'].param['epsilon_decay']
+                self.epsilon_min = Registry.mapping['model_mapping']['setting'].param['epsilon_min']
+                self.learning_rate = Registry.mapping['model_mapping']['setting'].param['learning_rate']
+                self.vehicle_max = Registry.mapping['model_mapping']['setting'].param['vehicle_max']
+                self.batch_size = Registry.mapping['model_mapping']['setting'].param['batch_size']
+    
+                self.model = self._build_model()
+                self.target_model = self._build_model()
+                self.update_target_network()
+                self.criterion = nn.MSELoss(reduction='mean')
+                self.optimizer = optim.RMSprop(self.model.parameters(),
+                                               lr=self.learning_rate,
+                                               alpha=0.9, centered=False, eps=1e-7)
             print(self.ob_length, self.action_space.n)
+            print(f"self.epsilon: {self.epsilon}, self.epsilon_decay: {self.epsilon_decay}, self.epsilon_min: {self.epsilon_min}")
 
         def __repr__(self):
             return self.model.__repr__()
@@ -163,6 +169,32 @@ if mode == 'dqn':
             observation = torch.tensor(feature, dtype=torch.float32)
             # TODO: no need to calculate gradient when interacting with environment
             actions = self.model(observation, train=False)
+            actions = actions.clone().detach().numpy()
+            return np.argmax(actions, axis=1)
+
+        def get_action_sharednet(self, agent_0, ob, phase, test=False):
+            '''
+            get_action
+            Generate action.
+
+            :param ob: observation
+            :param phase: current phase
+            :param test: boolean, decide whether is test process
+            :return action: action that has the highest score
+            '''
+            if not test:
+                if np.random.rand() <= agent_0.epsilon:
+                    return self.sample()
+            if self.phase:
+                if self.one_hot:
+                    feature = np.concatenate([ob, utils.idx2onehot(phase, self.action_space.n)], axis=1)
+                else:
+                    feature = np.concatenate([ob, phase], axis=1)
+            else:
+                feature = ob
+            observation = torch.tensor(feature, dtype=torch.float32)
+            # TODO: no need to calculate gradient when interacting with environment
+            actions = agent_0.model(observation, train=False)
             actions = actions.clone().detach().numpy()
             return np.argmax(actions, axis=1)
 
@@ -291,6 +323,29 @@ if mode == 'dqn':
                                            alpha=0.9, centered=False, eps=1e-7)
             print(f'model loaded at {model_name}')
 
+        def load_shared_model(self, lr, e, customized_path=""):
+            '''
+            load_model
+            Load model params of an episode.
+
+            :param e: specified episode
+            :return: None
+            '''
+            if customized_path != "" and (e == "" or None):
+                model_name = customized_path
+
+            else:
+                model_name = os.path.join(Registry.mapping['logger_mapping']['path'].path,
+                                          'model', f'{e}_{self.rank}.pt')
+            self.model = self._build_model()
+            self.model.load_state_dict(torch.load(model_name, weights_only=True))
+            self.target_model = self._build_model()
+            self.target_model.load_state_dict(torch.load(model_name, weights_only=True))
+            self.optimizer = optim.RMSprop(self.model.parameters(),
+                                           lr=lr,
+                                           alpha=0.9, centered=False, eps=1e-7)
+            print(f'model loaded at {model_name}')
+
         def save_model(self, e):
             '''
             save_model
@@ -305,6 +360,22 @@ if mode == 'dqn':
             model_name = os.path.join(path, f'{e}_{self.rank}.pt')
             torch.save(self.model.state_dict(), model_name)
             print(f'model saved at {model_name}')
+            return model_name
+
+
+        def save_model_no_print(self, e):
+            '''
+            save_model
+            Save model params of an episode.
+
+            :param e: specified episode, used for file name
+            :return: None
+            '''
+            path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
+            if not os.path.exists(path):
+                os.makedirs(path)
+            model_name = os.path.join(path, f'{e}_{self.rank}.pt')
+            torch.save(self.model.state_dict(), model_name)
             return model_name
 
 

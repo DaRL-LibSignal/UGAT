@@ -159,8 +159,19 @@ class SIM2REALTrainer(BaseTrainer):
         print("\nVerifying simulation agents...")
         same_sim = self.verify_agent_networks(self.agents_sim)
 
+        test = []
+
+        for ag in self.agents_sim:
+            test.append(ag)
+
+        for ag in self.agents_real:
+            test.append(ag)
+            
         print("\nVerifying real agents...")
         same_real = self.verify_agent_networks(self.agents_real)
+
+        print("\nTest case all nets shared...")
+        testing = self.verify_agent_networks(test)
 
     def create_agents(self):
         '''
@@ -188,16 +199,11 @@ class SIM2REALTrainer(BaseTrainer):
             # Copy agent n times, one for each desired agent
             for i in range(1, num_agent):
                 self.agents_sim.append(Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
-                self.world_sim, i))
-
-            agent_real = Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
-                self.world_real, 0)
+                self.world_sim, i, self.agents_sim[0]))
             
-            self.agents_real.append(agent_real)
-            
-            for i in range(1, num_agent):
+            for i in range(0, num_agent):
                 self.agents_real.append(Registry.mapping['model_mapping'][Registry.mapping['command_mapping']['setting'].param['agent']](
-                self.world_real, i))
+                self.world_real, i, self.agents_sim[0]))
 
         else:
 
@@ -362,15 +368,12 @@ class SIM2REALTrainer(BaseTrainer):
         # pretrain model and load pretrained ones
         best_e = -1
         V = []
+        self.load_shared(path) # load both on the sim and real
         for e in range(self.episodes):
-            self.load_pretrained(path)  # load both on the sim and real
             
-            #self.check_agent_networks()
-
-            # first rollout
-
             # If decentralized handle real rollout differently?
             if self.decentralized_GAT == "both":
+                self.load_shared(path)
                 R = self.real_rollout(e - 1, True)
                 self.sim_rollout(e - 1, True)
                 V.append(R)
@@ -434,7 +437,7 @@ class SIM2REALTrainer(BaseTrainer):
                 # sim2real training
                 path = self.sim_tain(episode=20, e=e, writer=self.writer)
 
-        self.load_pretrained(path)
+        self.load_shared(path)
         R = self.real_eval(e)
         V.append(R)
 
@@ -806,8 +809,8 @@ class SIM2REALTrainer(BaseTrainer):
                     # Loop through agents gathering actions, action probs, and states
                     for idx, ag in enumerate(self.agents_sim):
                         # Get actions as one hot encoded over 8 possible actions
-                        actions_cold.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))
-                        action_onehot = idx2onehot(np.array(ag.get_action(last_obs[idx], last_phase[idx], test=False)), 8)
+                        actions_cold.append(ag.get_action_sharednet(self.agents_sim[0], last_obs[idx], last_phase[idx], test=False))
+                        action_onehot = idx2onehot(np.array(ag.get_action_sharednet(self.agents_sim[0], last_obs[idx], last_phase[idx], test=False)), 8)
                         actions.append(action_onehot)
 
                         actions_prob.append(ag.get_action_prob(last_obs[idx], last_phase[idx]))
@@ -849,6 +852,7 @@ class SIM2REALTrainer(BaseTrainer):
                         total_decision_num % self.update_model_rate == self.update_model_rate - 1:
                     
                     q_loss = self.train_shared_net(self.centralized_replay_buffer)
+
                     episode_loss.append(q_loss)
 
                 # Modified to have all agent experiences train and update the target network
@@ -856,7 +860,7 @@ class SIM2REALTrainer(BaseTrainer):
                         total_decision_num % self.update_target_rate == self.update_target_rate - 1:
                     
                     self.agents_sim[0].update_target_network() # Update shared target network
-            
+                
                 if all(dones):
                     break
             
@@ -864,6 +868,10 @@ class SIM2REALTrainer(BaseTrainer):
                 mean_loss = np.mean(np.array(episode_loss))
             else:
                 mean_loss = 0
+
+            for idx, ag in enumerate(self.agents_sim):
+                if idx == 0:
+                    print(f"Agent: {idx}, Epsilon: {ag.epsilon}, Epsilon decay: {ag.epsilon_decay}, Epsilon min: {ag.epsilon_min}")
 
             action_diff.append(epoch_diff)
             action_distribution.append(epoch_distribution)
@@ -878,7 +886,7 @@ class SIM2REALTrainer(BaseTrainer):
         act_dif = np.concatenate(action_diff)
 
         np.save(os.path.join(self.debug_path, f'act_diff_{e}.npy'), act_dif)
-        model_path = self.agents_sim[0].save_model(e=e)
+        model_path = self.agents_sim[0].save_model_no_print(e=e)
         return model_path
     
 
@@ -904,21 +912,19 @@ class SIM2REALTrainer(BaseTrainer):
         active_agent.optimizer.step()
 
         # Modify the decay rate for all agents at the same time for the multi-agent case
-        for ag in self.agents_sim:
-            if ag.epsilon > ag.epsilon_min:
-                ag.epsilon *= ag.epsilon_decay
+        if active_agent.epsilon > active_agent.epsilon_min:
+            active_agent.epsilon *= active_agent.epsilon_decay
 
         return loss.clone().detach().numpy()
 
-
-
-    # Loading is set up in a centralized way, all agents share a network
-    def load_pretrained(self, model_path):
+    
+    # Loading is set up for parameter sharing, all agents share a network
+    def load_shared(self, model_path):
 
         base_path = sys.path[0] + "/"
         real_path = base_path + model_path
-        [ag.load_model(e="", customized_path=real_path) for ag in self.agents_sim]
-        [ag.load_model(e="", customized_path=real_path) for ag in self.agents_real]
+        [ag.load_shared_model(self.agents_sim[0].learning_rate, e="", customized_path=real_path) for ag in self.agents_sim]
+        [ag.load_shared_model(self.agents_sim[0].learning_rate, e="", customized_path=real_path) for ag in self.agents_real]
         time_stamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
         print("timestamp:{} successfully loaded a model with param {}".format(time_stamp, model_path))
 
