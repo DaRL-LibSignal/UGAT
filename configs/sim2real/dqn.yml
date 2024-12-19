@@ -5,7 +5,7 @@ model:
   name: dqn
   run_model: True
   epsilon_decay: 0.99 # original: 0.99
-  epsilon_min: 0.01 # original: 0.01
+  epsilon_min: 0.1 # original: 0.01
   grad_clip: 0.5
   one_hot: True
   phase: True
