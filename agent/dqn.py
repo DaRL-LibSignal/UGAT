@@ -41,7 +41,7 @@ if mode == 'dqn':
             inter_id = self.world.intersection_ids[self.rank]
             inter_obj = self.world.id2intersection[inter_id]
             self.inter = inter_obj
-            self.ob_generator = LaneVehicleGenerator(self.world, self.inter, ['lane_count'], in_only=True, average=None)
+            self.ob_generator = LaneVehicleGenerator(self.world, self.inter, ['lane_count'], in_only=False, average=None)
 
             self.phase_generator = IntersectionPhaseGenerator(world, self.inter, ["phase"],
                                                               targets=["cur_phase"], negative=False)
@@ -93,7 +93,7 @@ if mode == 'dqn':
             '''
             inter_id = self.world.intersection_ids[self.rank]
             inter_obj = self.world.id2intersection[inter_id]
-            self.ob_generator = LaneVehicleGenerator(self.world, inter_obj, ['lane_count'], in_only=True, average=None)
+            self.ob_generator = LaneVehicleGenerator(self.world, inter_obj, ['lane_count'], in_only=False, average=None)
             self.phase_generator = IntersectionPhaseGenerator(self.world, inter_obj, ["phase"],
                                                               targets=["cur_phase"], negative=False)
             self.reward_generator = LaneVehicleGenerator(self.world, inter_obj, ["pressure"], average="all", negative=True)
@@ -426,8 +426,7 @@ elif mode == 'ac_dqn':
             inter_id = self.world.intersection_ids[self.rank]
             inter_obj = self.world.id2intersection[inter_id]
             self.inter = inter_obj
-            self.ob_generator = LaneVehicleGenerator(self.world, self.inter, ['lane_count'], in_only=True, average=None)
-
+            self.ob_generator = LaneVehicleGenerator(self.world, self.inter, ['lane_count'], in_only=False, average=None)
             self.phase_generator = IntersectionPhaseGenerator(world, self.inter, ["phase"],
                                                               targets=["cur_phase"], negative=False)
             self.reward_generator = LaneVehicleGenerator(world, inter_obj, ["pressure"], average="all", negative=True)
