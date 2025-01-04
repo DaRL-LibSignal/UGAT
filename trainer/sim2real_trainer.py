@@ -921,8 +921,8 @@ class SIM2REALTrainer(BaseTrainer):
     # Loading is set up for parameter sharing, all agents share a network
     def load_shared(self, model_path):
 
-        base_path = sys.path[0] + "/"
-        real_path = base_path + model_path
+        base_path = os.getcwd()
+        real_path = os.path.join(base_path, model_path)
         [ag.load_shared_model(self.agents_sim[0].learning_rate, e="", customized_path=real_path) for ag in self.agents_sim]
         [ag.load_shared_model(self.agents_sim[0].learning_rate, e="", customized_path=real_path) for ag in self.agents_real]
         time_stamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
