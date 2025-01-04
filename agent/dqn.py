@@ -45,8 +45,7 @@ if mode == 'dqn':
 
             self.phase_generator = IntersectionPhaseGenerator(world, self.inter, ["phase"],
                                                               targets=["cur_phase"], negative=False)
-            self.reward_generator = LaneVehicleGenerator(self.world, self.inter, ["lane_waiting_count"],
-                                                         in_only=True, average='all', negative=True)
+            self.reward_generator = LaneVehicleGenerator(world, inter_obj, ["pressure"], average="all", negative=True)
             self.action_space = gym.spaces.Discrete(len(self.world.id2intersection[inter_id].phases))
 
             if self.phase:
@@ -97,8 +96,7 @@ if mode == 'dqn':
             self.ob_generator = LaneVehicleGenerator(self.world, inter_obj, ['lane_count'], in_only=True, average=None)
             self.phase_generator = IntersectionPhaseGenerator(self.world, inter_obj, ["phase"],
                                                               targets=["cur_phase"], negative=False)
-            self.reward_generator = LaneVehicleGenerator(self.world, inter_obj, ["lane_waiting_count"],
-                                                         in_only=True, average='all', negative=True)
+            self.reward_generator = LaneVehicleGenerator(self.world, inter_obj, ["pressure"], average="all", negative=True)
             self.queue = LaneVehicleGenerator(self.world, inter_obj,
                                               ["lane_waiting_count"], in_only=True,
                                               negative=False)
@@ -432,8 +430,7 @@ elif mode == 'ac_dqn':
 
             self.phase_generator = IntersectionPhaseGenerator(world, self.inter, ["phase"],
                                                               targets=["cur_phase"], negative=False)
-            self.reward_generator = LaneVehicleGenerator(self.world, self.inter, ["lane_waiting_count"],
-                                                         in_only=True, average='all', negative=True)
+            self.reward_generator = LaneVehicleGenerator(world, inter_obj, ["pressure"], average="all", negative=True)
             self.action_space = gym.spaces.Discrete(len(self.world.id2intersection[inter_id].phases))
 
             if self.phase:
@@ -487,8 +484,7 @@ elif mode == 'ac_dqn':
             self.ob_generator = LaneVehicleGenerator(self.world, inter_obj, ['lane_count'], in_only=True, average=None)
             self.phase_generator = IntersectionPhaseGenerator(self.world, inter_obj, ["phase"],
                                                               targets=["cur_phase"], negative=False)
-            self.reward_generator = LaneVehicleGenerator(self.world, inter_obj, ["lane_waiting_count"],
-                                                         in_only=True, average='all', negative=True)
+            self.reward_generator = LaneVehicleGenerator(self.world, inter_obj, ["pressure"], average="all", negative=True)
             self.queue = LaneVehicleGenerator(self.world, inter_obj,
                                               ["lane_waiting_count"], in_only=True,
                                               negative=False)
