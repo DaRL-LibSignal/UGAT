@@ -4,6 +4,7 @@ Part of this code is borrowed from RESCO: https://github.com/Pi-Star-Lab/RESCO
 
 import os
 import sys
+from collections import OrderedDict
 from math import atan2, pi
 import xml.etree.cElementTree as ET
 
@@ -702,10 +703,10 @@ class World(object):
         # pass
         
     def get_segmented_lane_count(self):
-        segmented_lane_counts = {}
+        segmented_lane_counts = OrderedDict()
         segments = [0, 1/3, 2/3, 1.1]
         for i in self.intersections:
-            segmented_lane_counts[i.id] = {}
+            segmented_lane_counts[i.id] = OrderedDict()
             in_lanes = []
             for road in i.in_roads:
                 for k in i.road_lane_mapping[road]:
@@ -715,7 +716,11 @@ class World(object):
             for road in i.out_roads:
                 for k in i.road_lane_mapping[road]:
                     out_lanes.append(k)
-            
+
+            # make sure lanes match with CityFlow
+            in_lanes.sort()        
+            out_lanes.sort()
+
             for lane in in_lanes:
                 vehicles = i.full_observation[lane]['vehicles']
                 segment_travelled_portions = [vehicle['position']/self.eng.lane.getLength(lane) for vehicle in vehicles]
