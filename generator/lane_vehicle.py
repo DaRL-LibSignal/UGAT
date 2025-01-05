@@ -182,6 +182,41 @@ class LaneVehicleGenerator(BaseGenerator):
             ret = np.array(ret_list)
         return ret
 
+class SegmentedLaneGenerator(LaneVehicleGenerator):
+    def __init__(self, world, I, fns, in_only=False, average=None, negative=False):
+        super().__init__(world, I, fns, in_only, average, negative)
+        if isinstance(world, world_sumo.World):
+            in_lanes_count = 0
+            for road in I.in_roads:
+                for k in I.road_lane_mapping[road]:
+                    in_lanes_count += 1
+
+            out_lanes_count = 0
+            for road in I.out_roads:
+                for k in I.road_lane_mapping[road]:
+                    out_lanes_count += 1
+
+            self.ob_length = in_lanes_count * 3 + out_lanes_count
+        #         # TODO: rank lanes by lane ranking [0,1,2], assume we only have one digit for ranking
+        elif isinstance(world, world_cityflow.World):
+            lanes = world.get_segmented_lane_count()[I.id]
+            size = sum(len(value) for value in lanes.values())
+            self.ob_length = size
+
+    def generate(self):
+        '''
+        generate
+        Generate state or reward based on current simulation state.
+        
+        :param: None
+        :return ret: state or reward
+        '''
+        result = self.world.get_info('segmented_lane_count')
+        lane_counts = [lane_segment for lane_segments in result[self.I.id].values() for lane_segment in lane_segments]
+        ret = np.array(lane_counts)
+
+        return ret
+
 if __name__ == "__main__":
     from world.world_cityflow import World
     world = World("examples/configs.json", thread_num=1)

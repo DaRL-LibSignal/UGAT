@@ -306,7 +306,8 @@ class World(object):
             "history_vehicles": self.get_history_vehicles,
             "phase": self.get_cur_phase,
             "throughput": self.get_cur_throughput,
-            "averate_travel_time": self.get_average_travel_time
+            "averate_travel_time": self.get_average_travel_time,
+            "segmented_lane_count": self.get_segmented_lane_count
             # "action_executed": self.get_executed_action
         }
         self.fns = []
@@ -322,6 +323,7 @@ class World(object):
         # record lanes' vehicles to calculate arrive_leave_time
         self.dic_lane_vehicle_previous_step = {key: None for key in self.all_lanes}
         self.dic_lane_vehicle_current_step = {key: None for key in self.all_lanes}
+        self.dic_lane_vehicle_distance = {key: None for key in self.all_lanes}
         self.dic_vehicle_arrive_leave_time = dict()  # cumulative
 
         print("world built.")
@@ -340,6 +342,7 @@ class World(object):
         self.real_delay= {}
         self.dic_lane_vehicle_previous_step = {key: None for key in self.all_lanes}
         self.dic_lane_vehicle_current_step = {key: None for key in self.all_lanes}
+        self.dic_lane_vehicle_distance = {key: None for key in self.all_lanes}
         self.dic_vehicle_arrive_leave_time = dict()
 
     def _update_arrive_time(self, list_vehicle_arrive):
@@ -396,6 +399,7 @@ class World(object):
 
         # contain outflow lanes
         self.dic_lane_vehicle_current_step = self.eng.get_lane_vehicles()
+        self.dic_lane_vehicle_distance = self.eng.get_vehicle_distance()
 
         # get vehicle list
         self.list_lane_vehicle_current_step = _change_lane_vehicle_dic_to_list(self.dic_lane_vehicle_current_step)
@@ -480,7 +484,47 @@ class World(object):
                 if lane in out_lanes:
                     pressure -= vehicles[lane]
             pressures[i.id] = pressure
+        self.get_segmented_lane_count()
         return pressures
+    
+    def get_segmented_lane_count(self):
+        lane_vehicles = self.dic_lane_vehicle_current_step
+        segmented_lane_counts = {}
+        # divide the lane into 3 parts
+        # kept the last segment edge slightly larger than 1 to also include 
+        # vehicles just pass the lane
+        segments = [0, 1/3, 2/3, 1.1]
+        for i in self.intersections:
+            segmented_lane_counts[i.id] = {}
+            
+            # get the in_lanes and out_lanes first
+            in_lanes = []
+            for road in i.in_roads:
+                from_zero = (road["startIntersection"] == i.id) if self.RIGHT else (
+                        road["endIntersection"] == i.id)
+                for n in range(len(road["lanes"]))[::(1 if from_zero else -1)]:
+                    in_lanes.append(road["id"] + "_" + str(n))
+
+            out_lanes = []
+            for road in i.out_roads:
+                from_zero = (road["endIntersection"] == i.id) if self.RIGHT else (
+                        road["startIntersection"] == i.id)
+                for n in range(len(road["lanes"]))[::(1 if from_zero else -1)]:
+                    out_lanes.append(road["id"] + "_" + str(n))
+
+            for lane in in_lanes:
+                vehicles = lane_vehicles[lane] if lane_vehicles[lane] else []
+                segment_travelled_portions = [self.dic_lane_vehicle_distance[vehicle] / self.lane_length[lane] for vehicle in vehicles]
+                segmented_lane_counts[i.id][lane] = [
+                    len(list(filter(lambda value: segments[segment] <= value < segments[segment+1], segment_travelled_portions)))
+                    for segment in range(len(segments) - 1)
+                ]
+            for lane in out_lanes:
+                segmented_lane_counts[i.id][lane] = [len(lane_vehicles[lane])] if lane_vehicles[lane] else [0]
+        
+        return segmented_lane_counts
+
+
 
     # return [self.dic_lane_waiting_vehicle_count_current_step[lane] for lane in self.list_entering_lanes] + \
     # [-self.dic_lane_waiting_vehicle_count_current_step[lane] for lane in self.list_exiting_lanes]
@@ -708,6 +752,7 @@ class World(object):
         '''
         #  update previous measurement
         self.dic_lane_vehicle_previous_step = self.dic_lane_vehicle_current_step
+        self.dic_lane_vehicle_distance = self.eng.get_vehicle_distance()
 
         if actions is not None:
             for i, action in enumerate(actions):

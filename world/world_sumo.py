@@ -465,7 +465,8 @@ class World(object):
             "history_vehicles": None,
             "phase": self.get_cur_phase,
             "throughput": self.get_cur_throughput,
-            "average_travel_time": None
+            "average_travel_time": None,
+            "segmented_lane_count": self.get_segmented_lane_count
         }
         self.fns = []
         self.info = {}
@@ -699,7 +700,34 @@ class World(object):
             pressures[i.id] = pressure
         return pressures
         # pass
-
+        
+    def get_segmented_lane_count(self):
+        segmented_lane_counts = {}
+        segments = [0, 1/3, 2/3, 1.1]
+        for i in self.intersections:
+            segmented_lane_counts[i.id] = {}
+            in_lanes = []
+            for road in i.in_roads:
+                for k in i.road_lane_mapping[road]:
+                    in_lanes.append(k)
+            
+            out_lanes = []
+            for road in i.out_roads:
+                for k in i.road_lane_mapping[road]:
+                    out_lanes.append(k)
+            
+            for lane in in_lanes:
+                vehicles = i.full_observation[lane]['vehicles']
+                segment_travelled_portions = [vehicle['position']/self.eng.lane.getLength(lane) for vehicle in vehicles]
+                segmented_lane_counts[i.id][lane] = [
+                    len(list(filter(lambda value: segments[segment] <= value < segments[segment+1], segment_travelled_portions)))
+                    for segment in range(len(segments) - 1)
+                ]
+            for lane in out_lanes:
+                segmented_lane_counts[i.id][lane] = [len(i.full_observation[lane]['vehicles'])]
+        
+        return segmented_lane_counts
+    
     def get_lane_waiting_time_count(self):
         '''
         get_lane_waiting_time_count
