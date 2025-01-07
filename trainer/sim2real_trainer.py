@@ -497,12 +497,14 @@ class SIM2REALTrainer(BaseTrainer):
                     rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
                     self.metric_sim.update(rewards)
 
+                    global_reward = np.mean(rewards)  # Single scalar value
+
                     # debug
                     epo_states_record.append(obs[0])
                     cur_phase = np.stack([ag.get_phase() for ag in self.agents_sim])
                     for idx, ag in enumerate(self.agents_sim):
                         self.centralized_pretrain_replay_buffer.append((f'{e}_{i // self.action_interval}_{ag.id}', 
-                                                               (last_obs[idx], last_phase[idx], actions[idx], rewards[idx], obs[idx], cur_phase[idx])))
+                                                               (last_obs[idx], last_phase[idx], actions[idx], global_reward, obs[idx], cur_phase[idx])))
                         # ag.remember(last_obs[idx], last_phase[idx], actions[idx], actions_prob[idx], rewards[idx],
                         #             obs[idx], cur_phase[idx], dones[idx], f'{e}_{i // self.action_interval}_{ag.id}')
                     flush += 1
@@ -519,7 +521,7 @@ class SIM2REALTrainer(BaseTrainer):
                     episode_loss.append(q_loss)
                 if total_decision_num > self.learning_start and \
                         total_decision_num % self.update_target_rate == self.update_target_rate - 1:
-                    self.agents_sim[0].update_target_network()
+                    self.agents_sim[0].update_target_network_soft()
                     #[ag.update_target_network() for ag in self.agents_sim]
 
                 if all(dones):
@@ -838,7 +840,10 @@ class SIM2REALTrainer(BaseTrainer):
                         rewards_list.append(np.stack(rewards))
                     rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
 
+                    #global_reward = np.mean(rewards)  # Single scalar value
+
                     self.metric_sim.update(rewards)
+                    
                     cur_phase = np.stack([ag.get_phase() for ag in self.agents_sim])
                     for idx, ag in enumerate(self.agents_sim):
 
@@ -858,8 +863,9 @@ class SIM2REALTrainer(BaseTrainer):
                 # Modified to have all agent experiences train and update the target network
                 if total_decision_num > self.learning_start and \
                         total_decision_num % self.update_target_rate == self.update_target_rate - 1:
-                    
-                    self.agents_sim[0].update_target_network() # Update shared target network
+                
+                    # Perform soft update of the target network
+                    self.agents_sim[0].update_target_network_soft()  # Update shared target network
                 
                 if all(dones):
                     break
@@ -869,9 +875,18 @@ class SIM2REALTrainer(BaseTrainer):
             else:
                 mean_loss = 0
 
-            for idx, ag in enumerate(self.agents_sim):
-                if idx == 0:
-                    print(f"Agent: {idx}, Epsilon: {ag.epsilon}, Epsilon decay: {ag.epsilon_decay}, Epsilon min: {ag.epsilon_min}")
+            # for idx, ag in enumerate(self.agents_sim):
+            #     if idx == 0:
+            #         # print(f"Agent: {idx}, Epsilon: {ag.epsilon}, Epsilon decay: {ag.epsilon_decay}, Epsilon min: {ag.epsilon_min}, Learning Rate: {ag.learning_rate}")
+            #         # # Print the RMSprop step size for each parameter in the model
+            #         # for param_group in ag.optimizer.param_groups:
+            #         #     for param in param_group['params']:
+            #         #         if param in ag.optimizer.state:
+            #         #             state = ag.optimizer.state[param]
+            #         #             if 'square_avg' in state:
+            #         #                 square_avg = state['square_avg']
+            #         #                 step_size = ag.optimizer.param_groups[0]['lr'] / torch.sqrt(square_avg + 1e-7)
+            #         #                 print(f"Step size for parameter: {step_size}")
 
             action_diff.append(epoch_diff)
             action_distribution.append(epoch_distribution)
@@ -882,7 +897,6 @@ class SIM2REALTrainer(BaseTrainer):
                         mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
                         self.metric_sim.throughput())
             
-
         act_dif = np.concatenate(action_diff)
 
         np.save(os.path.join(self.debug_path, f'act_diff_{e}.npy'), act_dif)
@@ -892,13 +906,14 @@ class SIM2REALTrainer(BaseTrainer):
 
     # Train the shared network
     def train_shared_net(self, replay_buffer):
-
+    
         active_agent = self.agents_sim[0]
-
+    
         # Randomly sample from shared experience replay
-        samples = random.sample(replay_buffer, 64)
+        samples = random.sample(replay_buffer, 64 * len(self.agents_sim))
+        
         b_t, b_tp, rewards, actions = active_agent._batchwise(samples)
-
+    
         # Use agent 1 train functionality to train shared network for convenience in code
         out = active_agent.target_model(b_tp, train=False)
         target = rewards + active_agent.gamma * torch.max(out, dim=1)[0]
@@ -910,12 +925,13 @@ class SIM2REALTrainer(BaseTrainer):
         loss.backward()
         clip_grad_norm_(active_agent.model.parameters(), active_agent.grad_clip)
         active_agent.optimizer.step()
-
+    
         # Modify the decay rate for all agents at the same time for the multi-agent case
         if active_agent.epsilon > active_agent.epsilon_min:
             active_agent.epsilon *= active_agent.epsilon_decay
-
+    
         return loss.clone().detach().numpy()
+
 
     
     # Loading is set up for parameter sharing, all agents share a network

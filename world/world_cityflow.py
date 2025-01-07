@@ -2,6 +2,7 @@ import json
 import os
 import cityflow
 from common.registry import Registry
+from collections import OrderedDict
 
 import numpy as np
 from math import atan2, pi
@@ -579,13 +580,13 @@ class World(object):
     
     def get_segmented_lane_count(self):
         lane_vehicles = self.dic_lane_vehicle_current_step
-        segmented_lane_counts = {}
+        segmented_lane_counts = OrderedDict()
         # divide the lane into 3 parts
         # kept the last segment edge slightly larger than 1 to also include 
         # vehicles just pass the lane
         segments = [0, 1/3, 2/3, 1.1]
         for i in self.intersections:
-            segmented_lane_counts[i.id] = {}
+            segmented_lane_counts[i.id] = OrderedDict()
             
             # get the in_lanes and out_lanes first
             in_lanes = []
@@ -601,6 +602,10 @@ class World(object):
                         road["startIntersection"] == i.id)
                 for n in range(len(road["lanes"]))[::(1 if from_zero else -1)]:
                     out_lanes.append(road["id"] + "_" + str(n))
+            
+            # make sure lanes match with SUMO
+            in_lanes.sort()        
+            out_lanes.sort()
 
             for lane in in_lanes:
                 vehicles = lane_vehicles[lane] if lane_vehicles[lane] else []

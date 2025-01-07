@@ -78,7 +78,7 @@ if mode == 'dqn':
                                                lr=self.learning_rate,
                                                alpha=0.9, centered=False, eps=1e-7)
             print(self.ob_length, self.action_space.n)
-            print(f"self.epsilon: {self.epsilon}, self.epsilon_decay: {self.epsilon_decay}, self.epsilon_min: {self.epsilon_min}")
+            # print(f"self.epsilon: {self.epsilon}, self.epsilon_decay: {self.epsilon_decay}, self.epsilon_min: {self.epsilon_min}, self.learning_rate: {self.learning_rate}")
 
         def __repr__(self):
             return self.model.__repr__()
@@ -289,14 +289,36 @@ if mode == 'dqn':
 
         def update_target_network(self):
             '''
-            update_target_network
             Update params of target network.
-
+        
             :param: None
             :return: None
             '''
             weights = self.model.state_dict()
             self.target_model.load_state_dict(weights)
+
+        def update_target_network_soft(self, tau=0.005):
+            '''
+            Perform a soft update of the target network's parameters
+            
+            :param tau: Interpolation factor between the model and target model (default 0.005)
+            :return: None
+            '''
+        
+            # Ensure state_dicts are fetched
+            model_params = self.model.state_dict()
+            target_params = self.target_model.state_dict()
+            
+            # Clone target params for verification
+            initial_target_params = {k: v.clone() for k, v in target_params.items()}
+            
+            # Perform the soft update
+            for param_name in model_params:
+                target_params[param_name] = tau * model_params[param_name] + (1.0 - tau) * target_params[param_name]
+            
+            # Load the updated parameters into the target model
+            self.target_model.load_state_dict(target_params)
+
 
         def load_model(self, e, customized_path=""):
             '''
