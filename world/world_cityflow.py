@@ -6,6 +6,7 @@ from common.registry import Registry
 import numpy as np
 from math import atan2, pi
 import math
+import random
 
 class Intersection(object):
     '''
@@ -216,11 +217,22 @@ class World(object):
     World Class is mainly used for creating a CityFlow engine and maintain information about CityFlow world.
     '''
 
-    def __init__(self, cityflow_config, thread_num, **kwargs):
+    def __init__(self, cityflow_config, thread_num, domain_randomization=False, **kwargs):
         print("building world...")
+        
+        # This is a counter for randomizing
+        self._randomize_counter = kwargs.get('count', 0)
+
+        # This is the original path to cityflow config:
+        self.original_cityflow_config = cityflow_config
+        if domain_randomization:
+            cityflow_config = self.randomize_config()
+            print(f"randomize cityflow iter {self._randomize_counter}")
+
         self.eng = cityflow.Engine(cityflow_config, thread_num=thread_num)
         with open(cityflow_config) as f:
             cityflow_config = json.load(f)
+        
         self.roadnet = self._get_roadnet(cityflow_config)
         self.RIGHT = True  # vehicles moves on the right side, currently always set to true due to CityFlow's mechanism
         self.interval = cityflow_config["interval"]
@@ -327,6 +339,84 @@ class World(object):
         self.dic_vehicle_arrive_leave_time = dict()  # cumulative
 
         print("world built.")
+
+    def randomize_config(self):
+        """
+        Randomize configuration for domain randomization experiments.
+        :return: path to the updated CityFlow configuration file
+        """
+        # get the original path
+        cityflow_config = self.original_cityflow_config
+
+        # Load original configuration
+        with open(cityflow_config, "r") as f:
+            config = json.load(f)
+
+        # Load and randomize vehicle flow file
+        flow_file_path = os.path.join(config["dir"], config["flowFile"])
+        with open(flow_file_path, "r") as f:
+            vehicle_flows = json.load(f)
+
+        # Define standard deviations for randomization
+        randomization_params = {
+            "maxPosAcc": 0.25,
+            "usualPosAcc": 0.25,
+            "maxNegAcc": 0.5,
+            "usualNegAcc": 0.5,
+            "minGap": 0.25,
+            "maxSpeed": 1.0,
+        }
+
+        # Randomize vehicle parameters
+        for vehicle_entry in vehicle_flows:
+            vehicle = vehicle_entry["vehicle"]
+            for param, std_dev in randomization_params.items():
+                if param in vehicle:
+                    original_value = vehicle[param]
+                    vehicle[param] = max(0, random.gauss(original_value, std_dev))
+
+        # randomize time
+        # Extract all unique start and end times
+        unique_times = list({vehicle_entry["startTime"] for vehicle_entry in vehicle_flows} |
+                            {vehicle_entry["endTime"] for vehicle_entry in vehicle_flows})
+
+        # Shuffle the times
+        random.shuffle(unique_times)
+
+        # Reassign the shuffled times to each vehicle
+        for i, vehicle_entry in enumerate(vehicle_flows):
+            shuffled_time = unique_times[i % len(unique_times)]  # Ensure we cycle through all shuffled times
+            vehicle_entry["startTime"] = shuffled_time
+            vehicle_entry["endTime"] = shuffled_time
+
+        # Ensure the folder exists
+        randomize_world_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, "randomize_flow")
+        os.makedirs(randomize_world_path, exist_ok=True)
+
+        # Save the updated flow file
+        randomized_flow_file = os.path.join(
+            randomize_world_path, f"randomized_{str(self._randomize_counter)}_" + os.path.basename(config["flowFile"])
+        )
+
+        with open(randomized_flow_file, "w") as f:
+            json.dump(vehicle_flows, f, indent=2)
+
+        # Update the main configuration to use the randomized flow file
+        config["flowFile"] = os.path.relpath(randomized_flow_file, config['dir'])
+
+        # # Apply additional keyword arguments
+        # for key, value in kwargs.items():
+        #     config[key] = value
+
+        # Save updated configuration
+        randomized_config_file = os.path.join(
+            os.path.dirname(cityflow_config), "randomized_" + os.path.basename(cityflow_config)
+        )
+        with open(randomized_config_file, "w") as f:
+            json.dump(config, f, indent=2)
+
+        return randomized_config_file
+
 
     def reset_vehicle_info(self):
         '''

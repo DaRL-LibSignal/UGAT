@@ -24,3 +24,24 @@ class SIM2REALTask(BaseTask):
         except RuntimeError as e:
             self._process_error(e)
             raise e
+
+@Registry.register_task("domain_randomization")
+class DomainRandomizationTask(BaseTask):
+    '''
+    Register Traffic Signal Control task.
+    '''
+    def run(self):
+        '''
+        run
+        Run the whole task, including training and testing.
+
+        :param: None
+        :return: None
+        '''
+        try:
+            if Registry.mapping['model_mapping']['setting'].param['run_model']:
+                self.trainer.run()
+
+        except RuntimeError as e:
+            self._process_error(e)
+            raise e
