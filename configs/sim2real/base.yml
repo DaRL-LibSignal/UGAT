@@ -46,12 +46,12 @@ model:
   load_model: False
   graphic: False
   vehicle_max: 1 # TODO: what is this for
-  learning_rate: 0.001
+  learning_rate: 0.01 # originally 0.001
   batch_size: 64
   gamma: 0.98
-  epsilon: 0.1 # original:0.1
-  epsilon_decay: 0.9995
-  epsilon_min: 0.1 # original: 0.01
+  epsilon: 1.0 # original:0.1
+  epsilon_decay: 0.99999034
+  epsilon_min: 0.05 # original: 0.01
   grad_clip: 0.5
 
   one_hot: False
