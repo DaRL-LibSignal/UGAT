@@ -321,16 +321,16 @@ class TSCTrainer(BaseTrainer):
                 os.makedirs(base_path)
             print(base_path)
             history_dir_path = sys.path[0] + "/history_save/" + Registry.mapping['command_mapping']['setting'].param['world'] + datetime.datetime.now().strftime('%Y-%m-%d:%H-%M-%S')
-            os.makedirs(history_dir_path)
+            # os.makedirs(history_dir_path)
             history_save_path = history_dir_path + "/history.txt"
-            pass_save_path = history_dir_path + "/action_pass.txt"
+            # pass_save_path = history_dir_path + "/action_pass.txt"
             num = 200
             candidate_list = []
             
-            for files in os.listdir(load_path):  
-                print("files", files)
-                if files.startswith(str(num)):
-                    candidate_list.append(files)
+            # for files in os.listdir(load_path):  
+            #     print("files", files)
+            #     if files.startswith(str(num)):
+            #         candidate_list.append(files)
                     # print(files)
             candidate_list.sort(key=lambda l: int(re.findall('\d+', l[3:])[0]))
             print(candidate_list)
@@ -384,17 +384,17 @@ class TSCTrainer(BaseTrainer):
                 break
 
         # if Registry.mapping['command_mapping']['setting'].param['debug']:
-        with open(file=load_path+"/record.txt", mode='a+', encoding='utf-8') as wf:
-            for line in history_record:
-                net_info =Registry.mapping['command_mapping']['setting'].param['network']
-                wf.writelines(net_info + ":   " +"Final Travel Time is %.4f, mean rewards: %.4f, queue: %.4f, delay: %.4f, throughput: %d" % (
-                    self.metric.real_average_travel_time(), \
-                    self.metric.rewards(), self.metric.queue(), self.metric.delay(), self.metric.throughput()
-                    ) + "\n")
-            # calculate existing vehicles in each phase (fixedtime only)
-            traj = self.env.world.vehicle_trajectory
-            path_record = log_passing_lane_actinon(traj, self.world.intersections[0].startlanes)
-            write_action_record(pass_save_path, path_record, a_struc)
+        # with open(file=load_path+"/record.txt", mode='a+', encoding='utf-8') as wf:
+        #     for line in history_record:
+        #         net_info =Registry.mapping['command_mapping']['setting'].param['network']
+        #         wf.writelines(net_info + ":   " +"Final Travel Time is %.4f, mean rewards: %.4f, queue: %.4f, delay: %.4f, throughput: %d" % (
+        #             self.metric.real_average_travel_time(), \
+        #             self.metric.rewards(), self.metric.queue(), self.metric.delay(), self.metric.throughput()
+        #             ) + "\n")
+        #     # calculate existing vehicles in each phase (fixedtime only)
+        #     traj = self.env.world.vehicle_trajectory
+        #     path_record = log_passing_lane_actinon(traj, self.world.intersections[0].startlanes)
+        #     # write_action_record(pass_save_path, path_record, a_struc)
             
 
         self.logger.info("Final Travel Time is %.4f, mean rewards: %.4f, queue: %.4f, delay: %.4f, throughput: %d" % (

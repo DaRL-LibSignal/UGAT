@@ -4,8 +4,8 @@ includes:
 model:
   name: dqn
   # control wether to train or only test
-  train_model: False
-  test_model: True
+  train_model: True
+  test_model: False
   epsilon: 0.1
   epsilon_decay: 0.995
   epsilon_min: 0.01

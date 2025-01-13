@@ -19,5 +19,5 @@ trainer:
 logger:
   save_rate: 0
   train_model: False
-  test_model: True
+  test_model: False
   load_model: False
