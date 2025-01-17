@@ -33,8 +33,8 @@ trainer:
 
 model:
   name: "non-rl"
-  train_model: False
-  test_model: True
+  train_model: True
+  test_model: False
   load_model: False
   graphic: False
   vehicle_max: 1 # TODO: what is this for

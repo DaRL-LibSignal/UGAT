@@ -50,18 +50,23 @@ class Runner:
 
         interface.Command_Setting_Interface(self.config)
         interface.Logger_param_Interface(self.config)  # register logger path
-        interface.World_param_Interface(self.config)
-        if self.config['model'].get('graphic', False):
-            param = Registry.mapping['world_mapping']['setting'].param
-            if self.config['command']['world'] in ['cityflow', 'sumo']:
-                roadnet_path = param['dir'] + param['roadnetFile']
-            else:
-                roadnet_path = param['road_file_addr']
-            interface.Graph_World_Interface(roadnet_path)  # register graphic parameters in Registry class
+
+        if self.config['model'].get('graphic') == False:
+
+            self.config['command']['world'] = 'sumo'
+            interface.World_param_Interface(self.config)
+
+            self.config['command']['world'] = 'cityflow'
+            interface.World_param_Interface(self.config)
+
+        else:
+            raise ValueError
+
+            # interface.Graph_World_Interface(roadnet_path)  # register graphic parameters in Registry class
         interface.Logger_path_Interface(self.config)
         # make output dir if not exist
         if not os.path.exists(Registry.mapping['logger_mapping']['path'].path):
-            os.makedirs(Registry.mapping['logger_mapping']['path'].path)        
+            os.makedirs(Registry.mapping['logger_mapping']['path'].path)
         interface.Trainer_param_Interface(self.config)
         interface.ModelAgent_param_Interface(self.config)
 
@@ -72,7 +77,6 @@ class Runner:
         self.task = Registry.mapping['task_mapping']\
             [Registry.mapping['command_mapping']['setting'].param['task']](self.trainer)
         start_time = time.time()
-        print(f"Trainer: {self.trainer}, task: {self.task}")
         self.task.run()
         logger.info(f"Total time taken: {time.time() - start_time}")
 

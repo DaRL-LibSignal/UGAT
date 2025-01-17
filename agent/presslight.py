@@ -273,6 +273,7 @@ class PressLightAgent(RLAgent):
         self.model.load_state_dict(torch.load(model_name))
         self.target_model = self._build_model()
         self.target_model.load_state_dict(torch.load(model_name))
+        print(f'model loaded at {model_name}')
     
     def save_model(self, e):
         '''
@@ -288,6 +289,7 @@ class PressLightAgent(RLAgent):
             os.makedirs(path)
         model_name = os.path.join(path, f'{e}_{self.rank}.pt')
         torch.save(self.model.state_dict(), model_name)
+        print(f'model saved at {model_name}')
 
 class DQNNet(nn.Module):
     '''
