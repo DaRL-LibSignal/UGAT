@@ -270,9 +270,9 @@ class PressLightAgent(RLAgent):
         model_name = os.path.join(
             Registry.mapping['logger_mapping']['path'].path, 'model', f'{e}_{self.rank}.pt')
         self.model = self._build_model()
-        self.model.load_state_dict(torch.load(model_name))
+        self.model.load_state_dict(torch.load(model_name, weights_only=True))
         self.target_model = self._build_model()
-        self.target_model.load_state_dict(torch.load(model_name))
+        self.target_model.load_state_dict(torch.load(model_name, weights_only=True))
         print(f'model loaded at {model_name}')
     
     def save_model(self, e):

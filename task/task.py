@@ -41,7 +41,7 @@ class TSCTask(BaseTask):
         try:
             if Registry.mapping['model_mapping']['setting'].param['train_model']:
                 print("-----conducting training--------")
-                self.trainer.train()
+                self.trainer.train_flow()
 
             if Registry.mapping['model_mapping']['setting'].param['test_model']:
                 print("-----conducting testing--------")
