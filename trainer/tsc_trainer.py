@@ -84,6 +84,7 @@ class TSCTrainer(BaseTrainer):
         if self.gat == True:
 
             self.total_decision_num = 0
+            self.mean_uncertainty = 0
 
             self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -191,6 +192,10 @@ class TSCTrainer(BaseTrainer):
     
             # Sim rollout + collect data
             self.sim_rollout(e)
+
+            for idx, ag in enumerate(self.agents_sim):
+                #ag.epsilon *= ag.epsilon_decay
+                print(f"agent {idx}, epsilon: {ag.epsilon}")
     
             # Real rollout + collect data
             self.train_test(e)
@@ -323,8 +328,8 @@ class TSCTrainer(BaseTrainer):
         :return: None
         """
         flush = 0
-    
         for e in range(self.training_iterations):
+            uncertainity_sum = 0
             self.metric_sim.clear()
             last_obs = self.env_sim.reset()
             for a in self.agents_sim:
@@ -367,13 +372,18 @@ class TSCTrainer(BaseTrainer):
                     
                         # Get predicted next state from the forward model
                         pred_next_state = self.forward_model.model(joint_state_action)
+
+                        # Convert the combined current state to a PyTorch tensor
+                        current_state_tensor = torch.from_numpy(combined_state).float().to(self.device)
                     
                         # Combine current state with predicted next state for the inverse model input
-                        inverse_input = torch.cat([joint_state_action[:, :len(combined_state)], pred_next_state], dim=1).to(self.device)  # Concatenate along feature axis
+                        inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)  # Concatenate along feature axis
                     
                         # Get grounded action from inverse model
                         result = self.inverse_model.model(inverse_input)
+
                         grounded_action, uncertainty = result[0], result[1]# Use torch.argmax to get the index of the highest value for each agent
+
                         # Reshape grounded_action to (num_agents, 8)
                         num_agents = grounded_action.shape[1] // 8
                         grounded_action_reshaped = grounded_action.view(num_agents, 8)
@@ -381,11 +391,18 @@ class TSCTrainer(BaseTrainer):
                         # Find argmax for each agent (Final grounded actions to use in training)
                         action_indices = torch.argmax(grounded_action_reshaped, dim=1)
                         action_indices = action_indices.cpu()
+
+                        uncertainity_sum += uncertainty
+
+                        # If uncertainity less than dynamic grounding rate, take grounded actions
+                        if uncertainty < self.mean_uncertainty:
+                            actions = action_indices
+                        
     
                     rewards_list = []
                     for _ in range(self.action_interval):
                         # Use grounded action
-                        obs, rewards, dones, _ = self.env_sim.step(action_indices)
+                        obs, rewards, dones, _ = self.env_sim.step(actions.flatten())
                         i += 1
                         rewards_list.append(np.stack(rewards))
                     rewards = np.mean(rewards_list, axis=0)
@@ -393,7 +410,7 @@ class TSCTrainer(BaseTrainer):
     
                     cur_phase = np.stack([ag.get_phase() for ag in self.agents_sim])
                     for idx, ag in enumerate(self.agents_sim):
-                        ag.remember(last_obs[idx], last_phase[idx], action_indices[idx], actions_prob[idx], rewards[idx],
+                        ag.remember(last_obs[idx], last_phase[idx], actions[idx], actions_prob[idx], rewards[idx],
                                     obs[idx], cur_phase[idx], dones[idx], f'{e}_{i // self.action_interval}_{ag.id}')
                     flush += 1
                     if flush == self.buffer_size - 1:
@@ -413,6 +430,10 @@ class TSCTrainer(BaseTrainer):
     
                 if all(dones):
                     break
+
+            # Update mean dynamic grounding rate
+            self.mean_uncertainty = self.mean_uncertainty / 360
+            
             if len(episode_loss) > 0:
                 mean_loss = np.mean(np.array(episode_loss))
             else:

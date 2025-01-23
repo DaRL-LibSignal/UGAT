@@ -549,6 +549,13 @@ class UNCERTAINTY_predictor(object):
                 # Forward pass
                 result = self.model(x)
                 y_pred, uncertainty = result[0], result[1]
+
+                num_agents = y_pred.shape[1] // 8
+
+                y_pred = y_pred.view(y_true.size(0) * num_agents, 8)
+                y_true = y_true.view(y_true.size(0), num_agents, 8).argmax(dim=-1)
+
+                y_true = y_true.view(y_true.size(0) * num_agents)
                 
                 # Compute the loss
                 loss = self.criterion(y_pred, y_true)
