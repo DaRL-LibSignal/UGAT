@@ -11,6 +11,7 @@ import datetime
 from common.stat_utils import log_passing_lane_actinon, write_action_record
 import torch
 
+
 print(torch.cuda.is_available())  # Should return True if CUDA is available
 print(torch.cuda.device_count()) # Number of GPUs detected
 
@@ -192,10 +193,6 @@ class TSCTrainer(BaseTrainer):
     
             # Sim rollout + collect data
             self.sim_rollout(e)
-
-            for idx, ag in enumerate(self.agents_sim):
-                #ag.epsilon *= ag.epsilon_decay
-                print(f"agent {idx}, epsilon: {ag.epsilon}")
     
             # Real rollout + collect data
             self.train_test(e)
@@ -330,6 +327,7 @@ class TSCTrainer(BaseTrainer):
         flush = 0
         for e in range(self.training_iterations):
             uncertainity_sum = 0
+            grounded_action_count = 0
             self.metric_sim.clear()
             last_obs = self.env_sim.reset()
             for a in self.agents_sim:
@@ -397,6 +395,7 @@ class TSCTrainer(BaseTrainer):
                         # If uncertainity less than dynamic grounding rate, take grounded actions
                         if uncertainty < self.mean_uncertainty:
                             actions = action_indices
+                            grounded_action_count += 1
                         
     
                     rewards_list = []
@@ -438,6 +437,9 @@ class TSCTrainer(BaseTrainer):
                 mean_loss = np.mean(np.array(episode_loss))
             else:
                 mean_loss = 0
+
+            # Log grounded action count
+            self.logger.info("Episode {}, Grounded actions taken: {}".format(episode, grounded_action_count))
     
             self.writeLog("TRAIN", e, self.metric_sim.real_average_travel_time(), \
                           mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
@@ -450,7 +452,9 @@ class TSCTrainer(BaseTrainer):
                                                                                                             self.metric_sim.delay(),
                                                                                                             int(self.metric_sim.throughput())))
             if e % self.save_rate == 0:
+                print(f"saving")
                 [ag.save_model(e=e) for ag in self.agents_sim]
+                
             self.logger.info("Policy training episode: {}, iteration {}/{}, real avg travel time:{}".format(episode, e, self.training_iterations, self.metric_sim.real_average_travel_time()))
             for j in range(len(self.world_sim.intersections)):
                 self.logger.debug(
@@ -502,6 +506,8 @@ class TSCTrainer(BaseTrainer):
     
         # Reset agents
         for a in self.agents_sim:
+            a.load_model(e)
+            print(f"loading")
             a.reset()
     
         if Registry.mapping['command_mapping']['setting'].param['world'] == 'cityflow':
@@ -544,8 +550,6 @@ class TSCTrainer(BaseTrainer):
         with open(file_path, 'wb') as f:
             pkl.dump(state_action_next_state, f)
 
-        if e % self.save_rate == 0:
-            [ag.save_model(e=e) for ag in self.agents_sim]
             self.logger.info("Sim Rollout episode:{}/{}, real avg travel time:{}".format(e, self.episodes, self.metric_sim.real_average_travel_time()))
         for j in range(len(self.world_sim.intersections)):
             self.logger.debug("intersection:{}, mean_episode_reward:{}, mean_queue:{}".format(j, self.metric_sim.lane_rewards()[j], \

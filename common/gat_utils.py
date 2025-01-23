@@ -7,6 +7,8 @@ from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 import numpy as np
 import os
+from torch.utils.data import Subset
+import random
 
 def save_data_to_pkl(data, file_path):
     """
@@ -269,12 +271,20 @@ class NN_predictor(object):
         model_name = os.path.join(self.model_dir, name)
         torch.save(self.model.state_dict(), model_name)
     
-    # Updated train function with GPU usage
-    def train(self, epochs, sign, agent_num=None):
+    def train(self, epochs, sign, agent_num=None, max_samples=5000):
         train_loss = 0.0
-    
-        # Load the training data from the .pkl file
-        train_dataset = PKLDataset('collected/ereal_train_full.pkl')
+        
+        # Load the full training dataset from the .pkl file
+        full_dataset = PKLDataset('collected/ereal_train_full.pkl')
+        
+        # Determine subset size based on max_samples
+        subset_size = min(max_samples, len(full_dataset)) if max_samples else len(full_dataset)
+        
+        # Randomly select indices for the subset
+        subset_indices = random.sample(range(len(full_dataset)), subset_size)
+        
+        # Create a subset of the dataset
+        train_dataset = Subset(full_dataset, subset_indices)
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
         
         if self.backward:
@@ -451,11 +461,20 @@ class UNCERTAINTY_predictor(object):
         self.x_val = None
         self.y_val = None
 
-    def train(self, epochs, sign, agent_num=None):
+    def train(self, epochs, sign, agent_num=None, max_samples=5000):
         train_loss = 0.0
         
-        # Load the training data from the .pkl file
-        train_dataset = PKLDataset('collected/esim_train_full.pkl')
+        # Load the full training dataset from the .pkl file
+        full_dataset = PKLDataset('collected/esim_train_full.pkl')
+        
+        # Determine subset size based on max_samples
+        subset_size = min(max_samples, len(full_dataset)) if max_samples else len(full_dataset)
+        
+        # Randomly select indices for the subset
+        subset_indices = random.sample(range(len(full_dataset)), subset_size)
+        
+        # Create a subset of the dataset
+        train_dataset = Subset(full_dataset, subset_indices)
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
         
         if self.backward:
