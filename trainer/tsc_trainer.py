@@ -86,6 +86,7 @@ class TSCTrainer(BaseTrainer):
 
             self.total_decision_num = 0
             self.mean_uncertainty = 0
+            self.uncertainties_last_episodes = []
 
             self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -293,8 +294,6 @@ class TSCTrainer(BaseTrainer):
                                                                                               self.metric_sim.queue(),
                                                                                               self.metric_sim.delay(),
                                                                                               int(self.metric_sim.throughput())))
-            if e % self.save_rate == 0:
-                [ag.save_model(e=e) for ag in self.agents_sim]
             self.logger.info("episode:{}/{}, real avg travel time:{}".format(e, self.episodes,
                                                                              self.metric_sim.real_average_travel_time()))
             for j in range(len(self.world_sim.intersections)):
@@ -325,8 +324,9 @@ class TSCTrainer(BaseTrainer):
         :return: None
         """
         flush = 0
+        
         for e in range(self.training_iterations):
-            uncertainity_sum = 0
+            uncertainty_sum = 0
             grounded_action_count = 0
             self.metric_sim.clear()
             last_obs = self.env_sim.reset()
@@ -390,18 +390,18 @@ class TSCTrainer(BaseTrainer):
                         action_indices = torch.argmax(grounded_action_reshaped, dim=1)
                         action_indices = action_indices.cpu()
 
-                        uncertainity_sum += uncertainty
+                        uncertainty_sum += uncertainty.item()
 
                         # If uncertainity less than dynamic grounding rate, take grounded actions
                         if uncertainty < self.mean_uncertainty:
                             actions = action_indices
                             grounded_action_count += 1
                         
-    
+                    actions = actions.flatten()
                     rewards_list = []
                     for _ in range(self.action_interval):
                         # Use grounded action
-                        obs, rewards, dones, _ = self.env_sim.step(actions.flatten())
+                        obs, rewards, dones, _ = self.env_sim.step(actions)
                         i += 1
                         rewards_list.append(np.stack(rewards))
                     rewards = np.mean(rewards_list, axis=0)
@@ -430,8 +430,21 @@ class TSCTrainer(BaseTrainer):
                 if all(dones):
                     break
 
-            # Update mean dynamic grounding rate
-            self.mean_uncertainty = self.mean_uncertainty / 360
+            # Calculate mean uncertainty for this episode
+            mean_episode_uncertainty = uncertainty_sum / 360
+            self.uncertainties_last_episodes.append(mean_episode_uncertainty)
+            
+            # Maintain the last 3 episodes of uncertainties
+            if len(self.uncertainties_last_episodes) > 3:
+                self.uncertainties_last_episodes.pop(0)
+            
+            # Update mean_uncertainty based on the last 3 episodes
+            self.mean_uncertainty = np.mean(self.uncertainties_last_episodes)
+
+            print(f"mean_episode_uncertainty: {mean_episode_uncertainty}")
+            print(f"self.uncertainties_last_episodes: {self.uncertainties_last_episodes}")
+            print(f"self.mean_uncertainty: {self.mean_uncertainty}")
+            
             
             if len(episode_loss) > 0:
                 mean_loss = np.mean(np.array(episode_loss))
@@ -439,7 +452,7 @@ class TSCTrainer(BaseTrainer):
                 mean_loss = 0
 
             # Log grounded action count
-            self.logger.info("Episode {}, Grounded actions taken: {}".format(episode, grounded_action_count))
+            self.logger.info("Episode {}, Grounded actions taken: {}, Mean uncertainty (this episode): {}, Check against uncertainty: {}".format(episode, grounded_action_count, mean_episode_uncertainty, self.mean_uncertainty))
     
             self.writeLog("TRAIN", e, self.metric_sim.real_average_travel_time(), \
                           mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
@@ -452,7 +465,6 @@ class TSCTrainer(BaseTrainer):
                                                                                                             self.metric_sim.delay(),
                                                                                                             int(self.metric_sim.throughput())))
             if e % self.save_rate == 0:
-                print(f"saving")
                 [ag.save_model(e=e) for ag in self.agents_sim]
                 
             self.logger.info("Policy training episode: {}, iteration {}/{}, real avg travel time:{}".format(episode, e, self.training_iterations, self.metric_sim.real_average_travel_time()))
@@ -506,8 +518,6 @@ class TSCTrainer(BaseTrainer):
     
         # Reset agents
         for a in self.agents_sim:
-            a.load_model(e)
-            print(f"loading")
             a.reset()
     
         if Registry.mapping['command_mapping']['setting'].param['world'] == 'cityflow':
@@ -544,6 +554,9 @@ class TSCTrainer(BaseTrainer):
     
             if all(dones):
                 break
+
+        if e % self.save_rate == 0:
+            [ag.save_model(e=e) for ag in self.agents_sim]
     
         # Save the collected rollout data
         os.makedirs(path, exist_ok=True)
