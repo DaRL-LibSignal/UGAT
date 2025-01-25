@@ -434,8 +434,8 @@ class TSCTrainer(BaseTrainer):
             mean_episode_uncertainty = uncertainty_sum / 360
             self.uncertainties_last_episodes.append(mean_episode_uncertainty)
             
-            # Maintain the last 3 episodes of uncertainties
-            if len(self.uncertainties_last_episodes) > 3:
+            # Maintain the last 2 episodes of uncertainties
+            if len(self.uncertainties_last_episodes) > 2:
                 self.uncertainties_last_episodes.pop(0)
             
             # Update mean_uncertainty based on the last 3 episodes
