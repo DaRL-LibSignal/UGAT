@@ -71,22 +71,33 @@ class TSCTrainer(BaseTrainer):
                                          '_BRF.log') + '_DTL.log'
                                      )
 
-        # Delete files used for gat training to ensure fresh files for training
+        # Path to the folder
         path = 'collected'
-        files_to_delete = ['esim_train.pkl', 'ereal_train.pkl', 'ereal_train_full.pkl', 'ereal_test_full.pkl', 'esim_train_full.pkl', 'esim_test_full.pkl']
         
-        for filename in files_to_delete:
-            file_path = os.path.join(path, filename)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                print(f"Existing {file_path} has been deleted")
+        # Check if the folder exists
+        if os.path.exists(path):
+            # Iterate through all files in the folder
+            for filename in os.listdir(path):
+                file_path = os.path.join(path, filename)
+                # Remove each file if it exists and is a file
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    print(f"{file_path} has been deleted")
+            print("All files in the 'collected' folder have been deleted.")
+        else:
+            print(f"The folder '{path}' does not exist.")
         
         # Initialize GAT models
         if self.gat == True:
 
+            self.forward_models = []
+            self.inverse_models = []
+
             self.total_decision_num = 0
             self.mean_uncertainty = 0
-            self.uncertainties_last_episodes = []
+            # Dictionary to store the last two uncertainties for each agent
+            self.last_two_uncertainties = {idx: [] for idx in range(len(self.agents_sim))}
+            self.avg_agent_uncertainties = [0 for i in range(len(self.agents_sim))]
 
             self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -95,6 +106,7 @@ class TSCTrainer(BaseTrainer):
             
             # Initialize centralized GAT models
             if self.gattype == "centralized":
+                self.last_two_central_uncertainties = []
                 print(f"\n------- INITIALIZING GAT MODELS CENTRALIZED -------\n")
                 gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
                 self.forward_model = NN_predictor(self.logger,
@@ -103,6 +115,22 @@ class TSCTrainer(BaseTrainer):
                 self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * num_agents * 2,
                                                 self.agents_real[0].action_space.n * num_agents, self.device, gat_path,
                                                 'collected/esim_train_full.pkl', backward=True)
+            # Initialize centralized GAT models
+            elif self.gattype == "decentralized":
+                print(f"\n------- INITIALIZING GAT MODELS DECENTRALIZED -------\n")
+                gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
+
+                
+                for i in range(num_agents):
+                    self.forward_model = NN_predictor(self.logger,
+                                                    (self.agents_real[0].ob_generator.ob_length + self.agents_real[0].action_space.n),
+                                                    self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
+                    self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * 2,
+                                                    self.agents_real[0].action_space.n, self.device, gat_path,
+                                                    'collected/esim_train_full.pkl', backward=True)
+                    
+                    self.forward_models.append(self.forward_model)
+                    self.inverse_models.append(self.inverse_model)
 
     def create_world(self):
         '''
@@ -193,10 +221,10 @@ class TSCTrainer(BaseTrainer):
         for e in range(self.episodes):
     
             # Sim rollout + collect data
-            self.sim_rollout(e)
+            self.sim_rollout(e, self.gattype)
     
             # Real rollout + collect data
-            self.train_test(e)
+            self.train_test(e, self.gattype)
     
             # Update GAT models
             self.gat_training(e)
@@ -320,13 +348,14 @@ class TSCTrainer(BaseTrainer):
         """
         Train the agent(s) without saving data or collecting it, and log the iteration number.
     
-        :param iteration: int, the current iteration number for logging
+        :param episode: int, the current episode number for logging
         :return: None
         """
         flush = 0
-        
+    
         for e in range(self.training_iterations):
             uncertainty_sum = 0
+            agent_uncertainty_sums = [0 for i in range(len(self.agents_sim))]
             grounded_action_count = 0
             self.metric_sim.clear()
             last_obs = self.env_sim.reset()
@@ -334,7 +363,7 @@ class TSCTrainer(BaseTrainer):
                 a.reset()
             if Registry.mapping['command_mapping']['setting'].param['world'] == 'cityflow':
                 self.env_sim.eng.set_save_replay(False)
-            
+    
             episode_loss = []
             i = 0
             while i < self.steps:
@@ -350,57 +379,52 @@ class TSCTrainer(BaseTrainer):
                         actions = np.stack([ag.sample() for ag in self.agents_sim])
     
                     actions_prob = [ag.get_action_prob(last_obs[idx], last_phase[idx]) for idx, ag in enumerate(self.agents_sim)]
-
-                    # Handle centralized GAT
-                    if self.gattype == "centralized":
-                        # Combine data for all agents
-                        combined_state = np.concatenate([state.flatten() for state in last_obs[:len(self.agents_real)]])  # Flatten and concatenate observations
-                        one_hot_actions = np.concatenate([
-                            idx2onehot(np.array([action]), 8).flatten() for action in actions[:len(self.agents_real)]  # One-hot encode actions
-                        ])
-                    
-                        # Combine observations and one-hot actions
-                        joint_state_action = np.concatenate([combined_state, one_hot_actions], axis=0)  # Shape: [combined state and actions]
-                    
-                        # Convert it to a PyTorch tensor
-                        joint_state_action = torch.from_numpy(joint_state_action).float().to(self.device)
-                    
-                        # Add the batch dimension using unsqueeze
-                        joint_state_action = joint_state_action.unsqueeze(0)  # Shape: (1, combined input size)
-                    
-                        # Get predicted next state from the forward model
-                        pred_next_state = self.forward_model.model(joint_state_action)
-
-                        # Convert the combined current state to a PyTorch tensor
-                        current_state_tensor = torch.from_numpy(combined_state).float().to(self.device)
-                    
-                        # Combine current state with predicted next state for the inverse model input
-                        inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)  # Concatenate along feature axis
-                    
-                        # Get grounded action from inverse model
-                        result = self.inverse_model.model(inverse_input)
-
-                        grounded_action, uncertainty = result[0], result[1]# Use torch.argmax to get the index of the highest value for each agent
-
-                        # Reshape grounded_action to (num_agents, 8)
-                        num_agents = grounded_action.shape[1] // 8
-                        grounded_action_reshaped = grounded_action.view(num_agents, 8)
-                        
-                        # Find argmax for each agent (Final grounded actions to use in training)
-                        action_indices = torch.argmax(grounded_action_reshaped, dim=1)
-                        action_indices = action_indices.cpu()
-
-                        uncertainty_sum += uncertainty.item()
-
-                        # If uncertainity less than dynamic grounding rate, take grounded actions
-                        if uncertainty < self.mean_uncertainty:
-                            actions = action_indices
-                            grounded_action_count += 1
-                        
+    
+                    if self.gat:
+                        if self.gattype == "centralized":
+                            combined_state = np.concatenate([state.flatten() for state in last_obs[:len(self.agents_real)]])
+                            one_hot_actions = np.concatenate([
+                                idx2onehot(np.array([action]), 8).flatten() for action in actions[:len(self.agents_real)]
+                            ])
+                            joint_state_action = np.concatenate([combined_state, one_hot_actions], axis=0)
+                            joint_state_action = torch.from_numpy(joint_state_action).float().to(self.device).unsqueeze(0)
+    
+                            pred_next_state = self.forward_model.model(joint_state_action)
+                            current_state_tensor = torch.from_numpy(combined_state).float().to(self.device)
+                            inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)
+    
+                            result = self.inverse_model.model(inverse_input)
+                            grounded_action, uncertainty = result[0], result[1]
+    
+                            uncertainty_sum += uncertainty.item()
+                            if uncertainty < self.mean_uncertainty:
+                                grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
+                                actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
+                                grounded_action_count += len(actions)
+    
+                        elif self.gattype == "decentralized":
+                            for idx, ag in enumerate(self.agents_sim):
+                                individual_state = last_obs[idx].flatten()
+                                individual_action = idx2onehot(np.array([actions[idx]]), 8).flatten()
+                                state_action = np.concatenate([individual_state, individual_action], axis=0)
+                                state_action = torch.from_numpy(state_action).float().to(self.device).unsqueeze(0)
+    
+                                pred_next_state = self.forward_models[idx].model(state_action)
+                                current_state_tensor = torch.from_numpy(individual_state).float().to(self.device)
+                                inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)
+    
+                                result = self.inverse_models[idx].model(inverse_input)
+                                grounded_action, uncertainty = result[0], result[1]
+    
+                                agent_uncertainty_sums[idx] += uncertainty.item()
+                                
+                                if uncertainty < self.avg_agent_uncertainties[idx]:
+                                    actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                    grounded_action_count += 1
+    
                     actions = actions.flatten()
                     rewards_list = []
                     for _ in range(self.action_interval):
-                        # Use grounded action
                         obs, rewards, dones, _ = self.env_sim.step(actions)
                         i += 1
                         rewards_list.append(np.stack(rewards))
@@ -416,44 +440,52 @@ class TSCTrainer(BaseTrainer):
                         flush = 0
     
                     self.total_decision_num += 1
-                    
                     last_obs = obs
-                    
-                if self.total_decision_num > self.learning_start and \
-                        self.total_decision_num % self.update_model_rate == self.update_model_rate - 1:
-                    cur_loss_q = np.stack([ag.train() for ag in self.agents_sim])
-                    episode_loss.append(cur_loss_q)
-                if self.total_decision_num > self.learning_start and \
-                        self.total_decision_num % self.update_target_rate == self.update_target_rate - 1:
-                    [ag.update_target_network() for ag in self.agents_sim]
     
-                if all(dones):
-                    break
-
-            # Calculate mean uncertainty for this episode
-            mean_episode_uncertainty = uncertainty_sum / 360
-            self.uncertainties_last_episodes.append(mean_episode_uncertainty)
-            
-            # Maintain the last 2 episodes of uncertainties
-            if len(self.uncertainties_last_episodes) > 2:
-                self.uncertainties_last_episodes.pop(0)
-            
-            # Update mean_uncertainty based on the last 3 episodes
-            self.mean_uncertainty = np.mean(self.uncertainties_last_episodes)
-
-            print(f"mean_episode_uncertainty: {mean_episode_uncertainty}")
-            print(f"self.uncertainties_last_episodes: {self.uncertainties_last_episodes}")
-            print(f"self.mean_uncertainty: {self.mean_uncertainty}")
-            
-            
+                    if self.total_decision_num > self.learning_start and \
+                            self.total_decision_num % self.update_model_rate == self.update_model_rate - 1:
+                        cur_loss_q = np.stack([ag.train() for ag in self.agents_sim])
+                        episode_loss.append(cur_loss_q)
+                    if self.total_decision_num > self.learning_start and \
+                            self.total_decision_num % self.update_target_rate == self.update_target_rate - 1:
+                        [ag.update_target_network() for ag in self.agents_sim]
+    
+                    if all(dones):
+                        break
+    
             if len(episode_loss) > 0:
                 mean_loss = np.mean(np.array(episode_loss))
             else:
                 mean_loss = 0
 
-            # Log grounded action count
-            self.logger.info("Episode {}, Grounded actions taken: {}, Mean uncertainty (this episode): {}, Check against uncertainty: {}".format(episode, grounded_action_count, mean_episode_uncertainty, self.mean_uncertainty))
-    
+            if self.gattype == "decentralized":
+                for idx, ag in enumerate(self.agents_sim):
+
+                    # Update last_two_uncertainties
+                    self.last_two_uncertainties[idx].append(agent_uncertainty_sums[idx] / 360)
+                    if len(self.last_two_uncertainties[idx]) > 2:
+                        self.last_two_uncertainties[idx].pop(0)
+
+                    # Update mean uncertainity for next episode
+                    self.avg_agent_uncertainties[idx] = np.mean(self.last_two_uncertainties[idx])
+
+                self.logger.info(
+                "Policy training episode: {}, grounded actions taken: {}, last two uncertainties: {}, avg agent uncertainties: {}".format(episode, grounded_action_count, self.last_two_uncertainties, self.avg_agent_uncertainties))
+
+            elif self.gattype == "centralized":
+                
+                # Update last_two_uncertainties
+                self.last_two_central_uncertainties.append(uncertainty_sum / 360)
+                if len(self.last_two_central_uncertainties) > 2:
+                    self.last_two_central_uncertainties.pop(0)
+
+                # Update mean uncertainity for next episode
+                self.mean_uncertainty = np.mean(self.last_two_central_uncertainties)
+
+                self.logger.info(
+                "Policy training episode: {}, grounded actions taken: {}, last two uncertainties: {}, avg uncertainty: {}".format(episode, grounded_action_count, self.last_two_central_uncertainties, self.mean_uncertainty))
+
+
             self.writeLog("TRAIN", e, self.metric_sim.real_average_travel_time(), \
                           mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
                           self.metric_sim.throughput())
@@ -497,8 +529,27 @@ class TSCTrainer(BaseTrainer):
                     # Train the centralized inverse model
                     self.inverse_model.train(100, sign=f'inverse', agent_num=len(self.agents_sim))
                     
+                elif self.gattype == "decentralized":
+                    # Load and split the real and sim data to prepare for forward / inverse model training
+
+                    # Forward data split using real data
+                    load_and_split_forward_data("collected/ereal_train.pkl", "collected/ereal_train_full", "collected/ereal_test_full",
+                                       8, 0.2, 42, "decentralized", len(self.agents_real))
+
+                    # Inverse data split using sim data
+                    load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
+                                       8, 0.2, 42, "decentralized", len(self.agents_sim))
+
+                    for idx, ag in enumerate(self.agents_sim):
+                        
+                        # Train the decentralized forward model
+                        self.forward_models[idx].train(100, 'forward', idx, 5000, "decentralized")
     
-    def sim_rollout(self, e):
+                        # Train the decentralized inverse model
+                        self.inverse_models[idx].train(100, 'inverse', idx, 5000, "decentralized")
+                    
+    
+    def sim_rollout(self, e, mode="centralized"):
         '''
         single_rollout
         Perform a single rollout in the simulated environment and save data.
@@ -547,9 +598,13 @@ class TSCTrainer(BaseTrainer):
     
                 rewards = np.mean(rewards_list, axis=0)
                 self.metric_sim.update(rewards)
-    
-                # Store the transition (state, action, next_state)
-                state_action_next_state.append((last_obs, actions, obs))
+
+                if mode == "decentralized":
+                    # Store the transition (agent_index, state, action, next_state) for each agent
+                    for idx, (state, action, next_state) in enumerate(zip(last_obs, actions, obs)):
+                        state_action_next_state.append((idx, state, action, next_state))
+                else:
+                    state_action_next_state.append((last_obs, actions, obs))
                 last_obs = obs
     
             if all(dones):
@@ -569,7 +624,7 @@ class TSCTrainer(BaseTrainer):
                                                                                     self.metric_sim.lane_queue()[j]))
 
 
-    def train_test(self, e):
+    def train_test(self, e, mode="centralized"):
         '''
         train_test
         Evaluate model performance after each episode training process.
@@ -600,8 +655,12 @@ class TSCTrainer(BaseTrainer):
                 rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
                 self.metric_real.update(rewards)
 
-                # Collect state-action-next_state for saving
-                state_action_next_state.append((last_obs, actions, obs))
+                if mode == "decentralized":
+                    # Collect state-action-next_state and agent index for saving
+                    for idx, (obs_agent, action_agent) in enumerate(zip(last_obs, actions)):
+                        state_action_next_state.append((idx, obs_agent, action_agent, obs[idx]))
+                else:
+                    state_action_next_state.append((last_obs, actions, obs))
 
                 last_obs = obs
             

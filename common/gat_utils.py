@@ -26,53 +26,54 @@ def save_data_to_pkl(data, file_path):
     with open(file_path, 'wb') as f:
         pickle.dump(data, f)
 
-def load_and_split_forward_data(pkl_file_path, train_pkl_file, test_pkl_file, spices=8, test_size=0.2, random_seed=42, mode="decentralized", num_agents=1):
+def load_and_split_forward_data(
+    pkl_file_path, train_pkl_file, test_pkl_file, spices=8, test_size=0.2, random_seed=42, mode="decentralized", num_agents=1
+):
     """
-    Load data from a .pkl file, process it, convert actions to one-hot encoding using idx2onehot, 
-    and split into train-test sets. The train and test sets are stored in separate .pkl files.
-
-    Parameters:
-        pkl_file_path (str): Path to the .pkl file.
-        train_pkl_file (str): Path to the train data .pkl file.
-        test_pkl_file (str): Path to the test data .pkl file.
-        spices (int): Number of possible actions (the size of the action space) for one-hot encoding.
-        test_size (float): Proportion of the data to include in the test split.
-        random_seed (int): Random seed for reproducibility.
-        mode (str): "centralized" or "decentralized", determines how to process data.
-        num_agents (int): Number of agents in the simulation (used for centralized mode).
-
-    Returns:
-        None
+    Load and process data for forward models, storing agent-specific data for decentralized mode.
     """
-
-    # Debugging: Check input file existence
     if not os.path.exists(pkl_file_path):
         raise FileNotFoundError(f"Error: File {pkl_file_path} not found.")
 
-    # Load data from .pkl file
     with open(pkl_file_path, 'rb') as f:
         data = pickle.load(f)
 
-    # Initialize lists to store states, actions, and next states
-    state_t_list = []
-    actions_list = []
-    state_t_plus_1_list = []
-
     if mode == "decentralized":
-        # Process records independently for each agent
-        for idx, record in enumerate(data):
-            states = record[0]  # List of states at time t
-            actions = record[1]  # Actions taken
-            next_states = record[2]  # States at time t+1
+        agent_data = {agent_idx: [] for agent_idx in range(num_agents)}
 
-            for j, (state, action, next_state) in enumerate(zip(states, actions, next_states)):
-                state_t_list.append(state.flatten())
-                state_t_plus_1_list.append(next_state.flatten())
+        for record in data:
+            agent_idx = record[0]
+            states = record[1]
+            actions = record[2]
+            next_states = record[3]
 
+            for state, action, next_state in zip(states, actions, next_states):
                 one_hot_action = idx2onehot(np.array([action]), spices)
-                actions_list.append(one_hot_action.flatten())
+                agent_data[agent_idx].append((
+                    torch.tensor(state.flatten(), dtype=torch.float32),
+                    torch.tensor(one_hot_action.flatten(), dtype=torch.float32),
+                    torch.tensor(next_state.flatten(), dtype=torch.float32)    
+                ))
+
+        for agent_idx, agent_records in agent_data.items():
+            features = torch.cat([torch.cat((rec[0], rec[1])).unsqueeze(0) for rec in agent_records])
+            targets = torch.cat([rec[2].unsqueeze(0) for rec in agent_records])
+
+            features_train, features_test, targets_train, targets_test = train_test_split(
+                features.numpy(), targets.numpy(), test_size=test_size, random_state=random_seed
+            )
+
+            train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
+            test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
+            save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
+            save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
 
     elif mode == "centralized":
+        # Initialize lists to store states, actions, and next states
+        state_t_list = []
+        actions_list = []
+        state_t_plus_1_list = []
+        
         # Combine data for all agents
         for idx, record in enumerate(data):
             states = record[0]  # List of states at time t
@@ -91,80 +92,75 @@ def load_and_split_forward_data(pkl_file_path, train_pkl_file, test_pkl_file, sp
             state_t_plus_1_list.append(combined_next_state)
             actions_list.append(one_hot_actions)
 
-    else:
-        raise ValueError("Invalid mode. Please select either 'centralized' or 'decentralized'.")
-
-    # Convert lists to PyTorch tensors
-    state_t_tensor = torch.stack([torch.tensor(state, dtype=torch.float32) for state in state_t_list])
-    actions_tensor = torch.stack([torch.tensor(action, dtype=torch.float32) for action in actions_list])
-    state_t_plus_1_tensor = torch.stack([torch.tensor(next_state, dtype=torch.float32) for next_state in state_t_plus_1_list])
-
-    # Combine inputs (state_t and actions) as features
-    features = torch.cat((state_t_tensor, actions_tensor), dim=1)
-    targets = state_t_plus_1_tensor
-
-    # Split into train and test sets
-    features_train, features_test, targets_train, targets_test = train_test_split(
-        features.numpy(), targets.numpy(), test_size=test_size
-    )
-
-    # Prepare the data for saving
-    train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
-    test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
-
-    # Save or append the train and test data to their respective .pkl files
-    save_data_to_pkl(train_data, train_pkl_file)
-    save_data_to_pkl(test_data, test_pkl_file)
+        # Convert lists to PyTorch tensors
+        state_t_tensor = torch.stack([torch.tensor(state, dtype=torch.float32) for state in state_t_list])
+        actions_tensor = torch.stack([torch.tensor(action, dtype=torch.float32) for action in actions_list])
+        state_t_plus_1_tensor = torch.stack([torch.tensor(next_state, dtype=torch.float32) for next_state in state_t_plus_1_list])
+    
+        # Combine inputs (state_t and actions) as features
+        features = torch.cat((state_t_tensor, actions_tensor), dim=1)
+        targets = state_t_plus_1_tensor
+    
+        # Split into train and test sets
+        features_train, features_test, targets_train, targets_test = train_test_split(
+           features.numpy(), targets.numpy(), test_size=test_size
+        )
+    
+        # Prepare the data for saving
+        train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
+        test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
+    
+        # Save or append the train and test data to their respective .pkl files
+        save_data_to_pkl(train_data, train_pkl_file)
+        save_data_to_pkl(test_data, test_pkl_file)
 
 
 def load_and_split_inverse_data(pkl_file_path, train_pkl_file, test_pkl_file, spices=8, test_size=0.2, random_seed=42, mode="decentralized", num_agents=1):
     """
-    Load data from a .pkl file, process it, and split into train-test sets for inverse learning. 
-    The features will be the next state and current state, and the target will be the actions. 
-    The train and test sets are stored in separate .pkl files.
-
-    Parameters:
-        pkl_file_path (str): Path to the .pkl file.
-        train_pkl_file (str): Path to the train data .pkl file.
-        test_pkl_file (str): Path to the test data .pkl file.
-        spices (int): Number of possible actions (the size of the action space) for one-hot encoding.
-        test_size (float): Proportion of the data to include in the test split.
-        random_seed (int): Random seed for reproducibility.
-        mode (str): "centralized" or "decentralized", determines how to process data.
-        num_agents (int): Number of agents in the simulation (used for centralized mode).
-
-    Returns:
-        None
+    Load and process data for inverse models, storing agent-specific data for decentralized mode.
     """
-
-    # Debugging: Check input file existence
     if not os.path.exists(pkl_file_path):
         raise FileNotFoundError(f"Error: File {pkl_file_path} not found.")
 
-    # Load data from .pkl file
     with open(pkl_file_path, 'rb') as f:
         data = pickle.load(f)
 
-    # Initialize lists to store states, actions, and next states
-    state_t_list = []
-    actions_list = []
-    state_t_plus_1_list = []
-
     if mode == "decentralized":
-        # Process records independently for each agent
-        for idx, record in enumerate(data):
-            states = record[0]  # List of states at time t
-            actions = record[1]  # Actions taken
-            next_states = record[2]  # States at time t+1
+        agent_data = {agent_idx: [] for agent_idx in range(num_agents)}
 
-            for j, (state, action, next_state) in enumerate(zip(states, actions, next_states)):
-                state_t_list.append(state.flatten())
-                state_t_plus_1_list.append(next_state.flatten())
+        for record in data:
+            agent_idx = record[0]
+            states = record[1]
+            actions = record[2]
+            next_states = record[3]
 
+            for state, action, next_state in zip(states, actions, next_states):
                 one_hot_action = idx2onehot(np.array([action]), spices)
-                actions_list.append(one_hot_action.flatten())
+                agent_data[agent_idx].append((
+                    torch.tensor(state.flatten(), dtype=torch.float32),
+                    torch.tensor(next_state.flatten(), dtype=torch.float32),
+                    torch.tensor(one_hot_action.flatten(), dtype=torch.float32)
+                ))
+
+        for agent_idx, agent_records in agent_data.items():
+            features = torch.cat([torch.cat((rec[0], rec[1])).unsqueeze(0) for rec in agent_records])
+            targets = torch.cat([rec[2].unsqueeze(0) for rec in agent_records])
+
+            features_train, features_test, targets_train, targets_test = train_test_split(
+                features.numpy(), targets.numpy(), test_size=test_size, random_state=random_seed
+            )
+
+            train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
+            test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
+            save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
+            save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
 
     elif mode == "centralized":
+        # Initialize lists to store states, actions, and next states
+        state_t_list = []
+        actions_list = []
+        state_t_plus_1_list = []
+         
         # Combine data for all agents
         for idx, record in enumerate(data):
             states = record[0]  # List of states at time t
@@ -183,30 +179,29 @@ def load_and_split_inverse_data(pkl_file_path, train_pkl_file, test_pkl_file, sp
             state_t_plus_1_list.append(combined_next_state)
             actions_list.append(one_hot_actions)
 
-    else:
-        raise ValueError("Invalid mode. Please select either 'centralized' or 'decentralized'.")
+        # Convert lists to PyTorch tensors
+        state_t_tensor = torch.stack([torch.tensor(state, dtype=torch.float32) for state in state_t_list])
+        actions_tensor = torch.stack([torch.tensor(action, dtype=torch.float32) for action in actions_list])
+        state_t_plus_1_tensor = torch.stack([torch.tensor(next_state, dtype=torch.float32) for next_state in state_t_plus_1_list])
+    
+        # Combine inputs (state_t and state_t_plus_1) as features
+        features = torch.cat((state_t_tensor, state_t_plus_1_tensor), dim=1)
+        targets = actions_tensor
+    
+        # Split into train and test sets
+        features_train, features_test, targets_train, targets_test = train_test_split(
+            features.numpy(), targets.numpy(), test_size=test_size
+        )
+    
+        # Prepare the data for saving
+        train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
+        test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
+    
+        # Save or append the train and test data to their respective .pkl files
+        save_data_to_pkl(train_data, train_pkl_file)
+        save_data_to_pkl(test_data, test_pkl_file)
 
-    # Convert lists to PyTorch tensors
-    state_t_tensor = torch.stack([torch.tensor(state, dtype=torch.float32) for state in state_t_list])
-    actions_tensor = torch.stack([torch.tensor(action, dtype=torch.float32) for action in actions_list])
-    state_t_plus_1_tensor = torch.stack([torch.tensor(next_state, dtype=torch.float32) for next_state in state_t_plus_1_list])
 
-    # Combine inputs (state_t and state_t_plus_1) as features
-    features = torch.cat((state_t_tensor, state_t_plus_1_tensor), dim=1)
-    targets = actions_tensor
-
-    # Split into train and test sets
-    features_train, features_test, targets_train, targets_test = train_test_split(
-        features.numpy(), targets.numpy(), test_size=test_size
-    )
-
-    # Prepare the data for saving
-    train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
-    test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
-
-    # Save or append the train and test data to their respective .pkl files
-    save_data_to_pkl(train_data, train_pkl_file)
-    save_data_to_pkl(test_data, test_pkl_file)
 
 
 class NN_predictor(object):
@@ -271,29 +266,40 @@ class NN_predictor(object):
         model_name = os.path.join(self.model_dir, name)
         torch.save(self.model.state_dict(), model_name)
     
-    def train(self, epochs, sign, agent_num=None, max_samples=5000):
+    def train(self, epochs, sign, agent_num=None, max_samples=5000, mode="centralized"):
+        """
+        Train the model on real data compatible with the data formatting of the forward split function.
+        """
         train_loss = 0.0
-        
-        # Load the full training dataset from the .pkl file
-        full_dataset = PKLDataset('collected/ereal_train_full.pkl')
-        
-        # Determine subset size based on max_samples
-        subset_size = min(max_samples, len(full_dataset)) if max_samples else len(full_dataset)
-        
-        # Randomly select indices for the subset
+    
+        # Determine dataset path based on mode and agent_num
+        if mode == "decentralized" and agent_num is not None:
+            dataset_path = f"collected/ereal_train_full_agent_{agent_num}.pkl"
+        elif mode == "centralized":
+            dataset_path = "collected/ereal_train_full.pkl"
+        else:
+            raise ValueError("Invalid mode or agent_num configuration for training.")
+    
+        # Load the dataset
+        full_dataset = PKLDataset(dataset_path)
+    
+        # Select a subset of the dataset
+        if max_samples and max_samples < len(full_dataset):
+            subset_size = max_samples
+        else:
+            subset_size = len(full_dataset)
         subset_indices = random.sample(range(len(full_dataset)), subset_size)
-        
-        # Create a subset of the dataset
+    
         train_dataset = Subset(full_dataset, subset_indices)
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-        
+    
         if self.backward:
-            txt = 'inverse'
+            txt = "inverse"
         else:
-            txt = 'forward'
-        
+            txt = "forward"
+    
         if agent_num is not None:
-            self.logger.info(f'{txt} model, training agent {agent_num}.')
+            self.logger.info(f"{txt} model: training agent {agent_num}.")
         else:
             print(f"Epoch {self.epo - 1} Training")
     
@@ -301,13 +307,12 @@ class NN_predictor(object):
         self.model.to(self.DEVICE)
     
         for e in range(epochs):
-            record_quantile = []
             for i, data in enumerate(train_loader):
                 # Move data to the device
                 x, y_true = data
                 x = x.to(self.DEVICE, non_blocking=True)
                 y_true = y_true.to(self.DEVICE, non_blocking=True)
-                
+    
                 # Zero the gradients
                 self.optimizer.zero_grad()
     
@@ -316,7 +321,7 @@ class NN_predictor(object):
     
                 # Compute the loss
                 loss = self.criterion(y_pred, y_true)
-                
+    
                 # Backward pass and optimization
                 loss.backward()
                 self.optimizer.step()
@@ -326,14 +331,14 @@ class NN_predictor(object):
             # Log progress at the first and last epoch
             if e == 0 or e == epochs - 1:
                 ave_loss = train_loss / len(train_dataset)
-                self.logger.info(f'epoch {e}: {txt} train average loss {ave_loss}.')
-                
+                self.logger.info(f"Epoch {e}: {txt} train average loss {ave_loss}.")
+    
                 # Evaluate the model
                 if self.backward:
-                    test_loss = self.testest_inverset(e, txt)
+                    test_loss = self.testest_inverset(e, txt, agent_num, mode)
                 else:
-                    test_loss = self.test(e, txt)
-            
+                    test_loss = self.test(e, txt, agent_num, mode)
+    
             # Reset train loss for the next epoch
             train_loss = 0.0
     
@@ -341,15 +346,22 @@ class NN_predictor(object):
         self.epo += 1
     
         # Return value if inverse training
-        if sign == 'inverse':
+        if sign == "inverse":
             return 0
 
 
-    def test(self, e, txt):
+
+    def test(self, e, txt, agent_num=None, mode="centralized"):
         test_loss = 0.0
     
-        # Load the validation data from the .pkl file
-        test_dataset = PKLDataset('collected/ereal_test_full.pkl')
+        # Load the validation dataset corresponding to the specified agent_num
+        if mode == "decentralized":
+            dataset_path = f'collected/ereal_test_full_agent_{agent_num}.pkl'
+        else:
+            dataset_path = 'collected/ereal_test_full.pkl'
+    
+        # Load the dataset from the corresponding .pkl file
+        test_dataset = PKLDataset(dataset_path)
         test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
     
         # Ensure model is on the correct device
@@ -461,11 +473,17 @@ class UNCERTAINTY_predictor(object):
         self.x_val = None
         self.y_val = None
 
-    def train(self, epochs, sign, agent_num=None, max_samples=5000):
+    def train(self, epochs, sign, agent_num=None, max_samples=5000, mode="centralized"):
         train_loss = 0.0
         
-        # Load the full training dataset from the .pkl file
-        full_dataset = PKLDataset('collected/esim_train_full.pkl')
+        # Load the dataset corresponding to the specified agent_num
+        if mode == "decentralized":
+            dataset_path = f'collected/esim_train_full_agent_{agent_num}.pkl'
+        else:
+            dataset_path = 'collected/esim_train_full.pkl'
+
+        # Load the dataset from the corresponding .pkl file
+        full_dataset = PKLDataset(dataset_path)
         
         # Determine subset size based on max_samples
         subset_size = min(max_samples, len(full_dataset)) if max_samples else len(full_dataset)
@@ -505,22 +523,30 @@ class UNCERTAINTY_predictor(object):
                 result = self.model(x)
                 y_pred, uncertainty = result[0], result[1]
 
+                # get l2_regularier_loss
+                alpha_val, l2_loss = result[2], result[3]
+
                 num_agents = y_pred.shape[1] // 8
 
                 y_pred = y_pred.view(y_true.size(0) * num_agents, 8)
                 y_true = y_true.view(y_true.size(0), num_agents, 8).argmax(dim=-1)
 
                 y_true = y_true.view(y_true.size(0) * num_agents)
-                
-                # Compute the loss
+
+                # standard loss
                 standard_loss = self.criterion(y_pred, y_true)
+
+                # classic_loss
+                generated_loss = loss_v2(y_pred, y_true)
+
+                # ablation study:
+                loss = standard_loss + generated_loss + l2_loss  # v_original
                 
                 # Backward pass and optimization
-                standard_loss.backward()
+                loss.backward()
                 self.optimizer.step()
-                
-                # Accumulate training loss
-                train_loss += standard_loss.item()
+                train_loss += loss.item()
+
             
             # Log progress at the first and last epoch
             if e == 0 or e == epochs - 1:
@@ -529,7 +555,7 @@ class UNCERTAINTY_predictor(object):
                 
                 # Evaluate the model
                 if self.backward:
-                    test_loss = self.test_inverse(e, txt)
+                    test_loss = self.test_inverse(e, txt, agent_num, mode)
                 else:
                     test_loss = self.test(e, txt)
             
@@ -544,11 +570,17 @@ class UNCERTAINTY_predictor(object):
             return uncertainty
 
 
-    def test_inverse(self, e, txt):
+    def test_inverse(self, e, txt, agent_num=None, mode="centralized"):
         test_loss = 0.0
         
-        # Load the testing data from the .pkl file
-        test_dataset = PKLDataset('collected/esim_test_full.pkl')
+        # Load the validation dataset corresponding to the specified agent_num
+        if mode == "decentralized":
+            dataset_path = f'collected/esim_test_full_agent_{agent_num}.pkl'
+        else:
+            dataset_path = 'collected/esim_test_full.pkl'
+    
+        # Load the dataset from the corresponding .pkl file
+        test_dataset = PKLDataset(dataset_path)
         test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
         
         # Ensure the model is on the correct device
@@ -684,3 +716,7 @@ class Inverse_N_net(nn.Module):
 
     def l2_penalty(self, w):
         return (w**2).sum() / 2
+
+
+def loss_v2(logits, labels):
+    return F.cross_entropy(logits, labels)

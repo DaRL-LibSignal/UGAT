@@ -31,7 +31,7 @@ trainer:
   update_target_rate: 10
   test_when_train: True
   gat: True
-  gattype: "centralized"
+  gattype: "decentralized"
   training_iterations: 1
 
 model:
