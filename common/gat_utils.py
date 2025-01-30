@@ -480,6 +480,7 @@ class UNCERTAINTY_predictor(object):
         if mode == "decentralized":
             dataset_path = f'collected/esim_train_full_agent_{agent_num}.pkl'
         else:
+            self.criterion = nn.BCEWithLogitsLoss()
             dataset_path = 'collected/esim_train_full.pkl'
 
         # Load the dataset from the corresponding .pkl file
@@ -526,12 +527,14 @@ class UNCERTAINTY_predictor(object):
                 # get l2_regularier_loss
                 alpha_val, l2_loss = result[2], result[3]
 
-                num_agents = y_pred.shape[1] // 8
+                if mode == "decentralized":
 
-                y_pred = y_pred.view(y_true.size(0) * num_agents, 8)
-                y_true = y_true.view(y_true.size(0), num_agents, 8).argmax(dim=-1)
+                    num_agents = y_pred.shape[1] // 8
 
-                y_true = y_true.view(y_true.size(0) * num_agents)
+                    y_pred = y_pred.view(y_true.size(0) * num_agents, 8)
+                    y_true = y_true.view(y_true.size(0), num_agents, 8).argmax(dim=-1)
+    
+                    y_true = y_true.view(y_true.size(0) * num_agents)
 
                 # standard loss
                 standard_loss = self.criterion(y_pred, y_true)
@@ -577,6 +580,7 @@ class UNCERTAINTY_predictor(object):
         if mode == "decentralized":
             dataset_path = f'collected/esim_test_full_agent_{agent_num}.pkl'
         else:
+            self.criterion = nn.BCEWithLogitsLoss()
             dataset_path = 'collected/esim_test_full.pkl'
     
         # Load the dataset from the corresponding .pkl file
@@ -601,12 +605,14 @@ class UNCERTAINTY_predictor(object):
                 result = self.model(x)
                 y_pred, uncertainty = result[0], result[1]
 
-                num_agents = y_pred.shape[1] // 8
+                if mode == "decentralized":
 
-                y_pred = y_pred.view(y_true.size(0) * num_agents, 8)
-                y_true = y_true.view(y_true.size(0), num_agents, 8).argmax(dim=-1)
-
-                y_true = y_true.view(y_true.size(0) * num_agents)
+                    num_agents = y_pred.shape[1] // 8
+    
+                    y_pred = y_pred.view(y_true.size(0) * num_agents, 8)
+                    y_true = y_true.view(y_true.size(0), num_agents, 8).argmax(dim=-1)
+    
+                    y_true = y_true.view(y_true.size(0) * num_agents)
                 
                 # Compute the loss
                 loss = self.criterion(y_pred, y_true)

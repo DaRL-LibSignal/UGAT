@@ -51,6 +51,7 @@ class TSCTrainer(BaseTrainer):
 
         self.gat = Registry.mapping['trainer_mapping']['setting'].param['gat']
         self.gattype = Registry.mapping['trainer_mapping']['setting'].param['gattype']
+        self.uncertainty_setting = Registry.mapping['trainer_mapping']['setting'].param['uncertainty']
         
         # replay file is only valid in cityflow now. 
         # TODO: support SUMO and Openengine later
@@ -395,12 +396,17 @@ class TSCTrainer(BaseTrainer):
     
                             result = self.inverse_model.model(inverse_input)
                             grounded_action, uncertainty = result[0], result[1]
-    
-                            uncertainty_sum += uncertainty.item()
-                            if uncertainty < self.mean_uncertainty:
+
+                            if self.uncertainty_setting == True:
+                                uncertainty_sum += uncertainty.item()
+                                if uncertainty < self.mean_uncertainty:
+                                    grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
+                                    actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
+                                    grounded_action_count += len(self.agents_sim)
+                            else:
                                 grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
                                 actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
-                                grounded_action_count += len(actions)
+                                grounded_action_count += len(self.agents_sim)
     
                         elif self.gattype == "decentralized":
                             for idx, ag in enumerate(self.agents_sim):
@@ -415,10 +421,13 @@ class TSCTrainer(BaseTrainer):
     
                                 result = self.inverse_models[idx].model(inverse_input)
                                 grounded_action, uncertainty = result[0], result[1]
-    
-                                agent_uncertainty_sums[idx] += uncertainty.item()
-                                
-                                if uncertainty < self.avg_agent_uncertainties[idx]:
+
+                                if self.uncertainty_setting == True:
+                                    agent_uncertainty_sums[idx] += uncertainty.item()
+                                    if uncertainty < self.avg_agent_uncertainties[idx]:
+                                        actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                        grounded_action_count += 1
+                                else:
                                     actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
                                     grounded_action_count += 1
     
@@ -524,10 +533,10 @@ class TSCTrainer(BaseTrainer):
                                        8, 0.2, 42, "centralized", len(self.agents_sim))
 
                     # Train the centralized forward model
-                    self.forward_model.train(100, sign=f'forward', agent_num=len(self.agents_real))
+                    self.forward_model.train(100, 'forward', len(self.agents_real), 5000 * len(self.agents_real))
 
                     # Train the centralized inverse model
-                    self.inverse_model.train(100, sign=f'inverse', agent_num=len(self.agents_sim))
+                    self.inverse_model.train(100, 'inverse', len(self.agents_sim), 5000 * len(self.agents_real))
                     
                 elif self.gattype == "decentralized":
                     # Load and split the real and sim data to prepare for forward / inverse model training
