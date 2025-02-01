@@ -116,7 +116,7 @@ class TSCTrainer(BaseTrainer):
                 self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * num_agents * 2,
                                                 self.agents_real[0].action_space.n * num_agents, self.device, gat_path,
                                                 'collected/esim_train_full.pkl', backward=True)
-            # Initialize centralized GAT models
+            # Initialize decentralized GAT models
             elif self.gattype == "decentralized":
                 print(f"\n------- INITIALIZING GAT MODELS DECENTRALIZED -------\n")
                 gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
@@ -132,6 +132,32 @@ class TSCTrainer(BaseTrainer):
                     
                     self.forward_models.append(self.forward_model)
                     self.inverse_models.append(self.inverse_model)
+
+            # Initialize JL-GAT models
+            elif self.gattype == "jlgat":
+                print(f"\n------- INITIALIZING JL-GAT MODELS -------\n")
+                gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
+                
+                self.net = Registry.mapping['trainer_mapping']['setting'].param['network']
+
+                # Hardcoded values for # of neighbors for each agent until I fix later
+                if self.net == "cityflow1x3":
+                    self.agents_real[0].neighbors = 2
+                    self.agents_real[1].neighbors = 3
+                    self.agents_real[2].neighbors = 2
+                
+                for idx, ag in enumerate(self.agents_real):
+
+                    self.forward_model = NN_predictor(self.logger,
+                                                    (self.agents_real[0].ob_generator.ob_length * ag.neighbors + self.agents_real[0].action_space.n * ag.neighbors),
+                                                    self.agents_real[0].ob_generator.ob_length * ag.neighbors, self.device, gat_path, 'collected/ereal_train_full.pkl')
+                    self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * ag.neighbors * 2,
+                                                    self.agents_real[0].action_space.n * ag.neighbors, self.device, gat_path,
+                                                    'collected/esim_train_full.pkl', backward=True)
+                    
+                    self.forward_models.append(self.forward_model)
+                    self.inverse_models.append(self.inverse_model)
+                    
 
     def create_world(self):
         '''
@@ -430,6 +456,91 @@ class TSCTrainer(BaseTrainer):
                                 else:
                                     actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
                                     grounded_action_count += 1
+
+                        # Currently setup for 1x3 only
+                        elif self.gattype == "jlgat":
+                            
+                            if self.net == "cityflow1x3":
+
+                                combined_state = np.concatenate([state.flatten() for state in last_obs[:len(self.agents_sim)]])
+                                one_hot_actions = np.concatenate([
+                                idx2onehot(np.array([action]), 8).flatten() for action in actions[:len(self.agents_real)]
+                                ])
+                                
+                                for idx, ag in enumerate(self.agents_sim):
+                                    if idx == 0:  # Agent 0: Uses its own state + agent 1's state + its own & agent 1's actions
+                                        relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten()])
+                                        relevant_actions = np.concatenate([
+                                            idx2onehot(np.array([actions[0]]), 8).flatten(),
+                                            idx2onehot(np.array([actions[1]]), 8).flatten()
+                                        ])
+                                    
+                                    elif idx == 1:  # Agent 1: Uses all agent states and actions
+                                        relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten(), last_obs[2].flatten()])
+                                        relevant_actions = np.concatenate([
+                                            idx2onehot(np.array([actions[0]]), 8).flatten(),
+                                            idx2onehot(np.array([actions[1]]), 8).flatten(),
+                                            idx2onehot(np.array([actions[2]]), 8).flatten()
+                                        ])
+                                        
+                                    elif idx == 2:  # Agent 2: Uses its own state + agent 1's state + its own & agent 1's actions
+                                        relevant_states = np.concatenate([last_obs[2].flatten(), last_obs[1].flatten()])
+                                        relevant_actions = np.concatenate([
+                                            idx2onehot(np.array([actions[2]]), 8).flatten(),
+                                            idx2onehot(np.array([actions[1]]), 8).flatten()
+                                        ])
+                            
+                                    # Create state-action input
+                                    state_action = np.concatenate([relevant_states, relevant_actions], axis=0)
+                                    state_action = torch.from_numpy(state_action).float().to(self.device).unsqueeze(0)
+                            
+                                    # Predict next state
+                                    pred_next_state = self.forward_models[idx].model(state_action)
+                                    current_state_tensor = torch.from_numpy(relevant_states).float().to(self.device)
+                                    inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)
+                            
+                                    # Compute inverse model results
+                                    result = self.inverse_models[idx].model(inverse_input)
+                                    grounded_action, uncertainty = result[0], result[1]
+                            
+                                    if self.uncertainty_setting:
+                                        agent_uncertainty_sums[idx] += uncertainty.item()
+                                        if uncertainty < self.avg_agent_uncertainties[idx]:
+                                            
+                                            batch_size, num_elements = grounded_action.shape
+                                            new_first_dim = num_elements // 8
+
+                                            # Reshape to (N, 8)
+                                            reshaped_tensor = grounded_action.view(new_first_dim, 8)
+
+                                            select_idx = idx
+
+                                            # If last agent, select the last spot for state and action
+                                            if idx == 2:
+                                                select_idx = 1
+                                                
+                                            selected_tensor = reshaped_tensor[select_idx]
+                    
+                                            actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                            grounded_action_count += 1
+                                    else:
+                                        
+                                        batch_size, num_elements = grounded_action.shape
+                                        new_first_dim = num_elements // 8
+
+                                        # Reshape to (N, 8)
+                                        reshaped_tensor = grounded_action.view(new_first_dim, 8)
+
+                                        select_idx = idx
+
+                                        # If last agent, select the last spot for action
+                                        if idx == 2:
+                                            select_idx = 1
+                                                
+                                        selected_tensor = reshaped_tensor[select_idx]
+                    
+                                        actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                        grounded_action_count += 1
     
                     actions = actions.flatten()
                     rewards_list = []
@@ -467,7 +578,7 @@ class TSCTrainer(BaseTrainer):
             else:
                 mean_loss = 0
 
-            if self.gattype == "decentralized":
+            if self.gattype == "decentralized" or "jlgat":
                 for idx, ag in enumerate(self.agents_sim):
 
                     # Update last_two_uncertainties
@@ -556,6 +667,25 @@ class TSCTrainer(BaseTrainer):
     
                         # Train the decentralized inverse model
                         self.inverse_models[idx].train(100, 'inverse', idx, 5000, "decentralized")
+
+                elif self.gattype == "jlgat":
+                    # Load and split the real and sim data to prepare for forward / inverse model training
+
+                    # Forward data split using real data
+                    load_and_split_forward_data("collected/ereal_train.pkl", "collected/ereal_train_full", "collected/ereal_test_full",
+                                       8, 0.2, 42, "jlgat", len(self.agents_real))
+
+                    # Inverse data split using sim data
+                    load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
+                                       8, 0.2, 42, "jlgat", len(self.agents_sim))
+
+                    for idx, ag in enumerate(self.agents_sim):
+                        
+                        # Train the decentralized forward model
+                        self.forward_models[idx].train(100, 'forward', idx, 5000, "jlgat")
+    
+                        # Train the decentralized inverse model
+                        self.inverse_models[idx].train(100, 'inverse', idx, 5000, "jlgat")
                     
     
     def sim_rollout(self, e, mode="centralized"):
@@ -612,6 +742,18 @@ class TSCTrainer(BaseTrainer):
                     # Store the transition (agent_index, state, action, next_state) for each agent
                     for idx, (state, action, next_state) in enumerate(zip(last_obs, actions, obs)):
                         state_action_next_state.append((idx, state, action, next_state))
+                
+                elif mode == "jlgat" and self.net == "cityflow1x3":
+                    # Joint local information storage for cityflow1x3 network
+                    state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=1), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), np.concatenate([obs[0], obs[1]], axis=1)))
+                    state_action_next_state.append((1, np.array(last_obs).reshape(1, -1), actions.reshape(-1, 1), np.array(obs).reshape(1, -1)))
+                    state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=1), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), np.concatenate([obs[1], obs[2]], axis=1)))
+
+                    # print(f"state: {np.array(last_obs).reshape(1, -1).shape}")
+                    # print(f"actions: {actions.reshape(-1, 1).shape}")
+                    # print(f"next state: {np.array(obs).reshape(1, -1).shape}")
+
+                    
                 else:
                     state_action_next_state.append((last_obs, actions, obs))
                 last_obs = obs
@@ -668,6 +810,17 @@ class TSCTrainer(BaseTrainer):
                     # Collect state-action-next_state and agent index for saving
                     for idx, (obs_agent, action_agent) in enumerate(zip(last_obs, actions)):
                         state_action_next_state.append((idx, obs_agent, action_agent, obs[idx]))
+
+                elif mode == "jlgat" and self.net == "cityflow1x3":
+                    # Joint local information storage for cityflow1x3 network
+                    state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=1), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), np.concatenate([obs[0], obs[1]], axis=1)))
+                    state_action_next_state.append((1, np.array(last_obs).reshape(1, -1), actions.reshape(-1, 1), np.array(obs).reshape(1, -1)))
+                    state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=1), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), np.concatenate([obs[1], obs[2]], axis=1)))
+
+                    # print(f"state: {np.array(last_obs).shape}")
+                    # print(f"actions: {actions.shape}")
+                    # print(f"next state: {np.array(obs).shape}")
+                
                 else:
                     state_action_next_state.append((last_obs, actions, obs))
 

@@ -65,6 +65,8 @@ class PressLightAgent(RLAgent):
                                        lr=self.learning_rate,
                                        alpha=0.9, centered=False, eps=1e-7)
 
+        self.neighbors = 0
+
     def __repr__(self):
         return self.model.__repr__()
 

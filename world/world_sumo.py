@@ -129,6 +129,23 @@ class Intersection(object):
 
         # TODO: check .signals .full_observation .last_stet_vehicles need to be set or not
 
+    def get_adjacent_intersections(self):
+        """
+        Returns the number of intersections directly connected to this intersection.
+        """
+        adjacent_intersections = set()
+        
+        for roadlink in self.roadlinks:
+            start, end = roadlink
+            if start != self.id:
+                adjacent_intersections.add(start)
+            if end != self.id:
+                adjacent_intersections.add(end)
+
+        self.adjacent_intersections = adjacent_intersections
+
+        print(f"adjacent_intersections: {self.adjacent_intersections}")
+
     def _sort_roads(self):
         '''
         _sort_roads
@@ -476,6 +493,23 @@ class World(object):
         self.vehicle_maxspeed = {}
         self.real_delay = {}
         self.vehicle_blocked = ()
+
+    def get_adjacent_intersections(self):
+        """
+        Returns the number of intersections directly connected to this intersection.
+        """
+        adjacent_intersections = set()
+        
+        for roadlink in self.roadlinks:
+            start, end = roadlink
+            if start != self.id:
+                adjacent_intersections.add(start)
+            if end != self.id:
+                adjacent_intersections.add(end)
+
+        self.adjacent_intersections = adjacent_intersections
+
+        print(f"adjacent_intersections: {self.adjacent_intersections}")
 
     def generate_valid_phase(self):
         '''

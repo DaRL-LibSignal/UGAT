@@ -81,6 +81,7 @@ class Intersection(object):
 
         self.full_observation = {lane: dict() for lane in self.lanes}
 
+
     def _sort_roads(self):
         '''
         _sort_roads

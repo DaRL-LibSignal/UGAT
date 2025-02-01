@@ -17,7 +17,6 @@ class Intersection(object):
         self.world = world
         self.eng = self.world.eng
 
-
         # incoming and outgoing roads of each intersection, clock-wise order from North
         self.roads = []
         self.outs = []
@@ -328,6 +327,7 @@ class World(object):
         self.dic_vehicle_arrive_leave_time = dict()  # cumulative
 
         print("world built.")
+        
 
     def reset_vehicle_info(self):
         '''

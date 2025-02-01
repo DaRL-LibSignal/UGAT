@@ -49,6 +49,8 @@ class Runner:
         Register config into Registry class
         """
 
+        self.config['command']['network'] = args.network
+
         interface.Command_Setting_Interface(self.config)
         interface.Logger_param_Interface(self.config)  # register logger path
 
@@ -63,7 +65,7 @@ class Runner:
         else:
             raise ValueError
 
-            # interface.Graph_World_Interface(roadnet_path)  # register graphic parameters in Registry class
+        # interface.Graph_World_Interface(roadnet_path)  # register graphic parameters in Registry class
         interface.Logger_path_Interface(self.config)
         # make output dir if not exist
         if not os.path.exists(Registry.mapping['logger_mapping']['path'].path):
@@ -73,6 +75,10 @@ class Runner:
 
     def run(self):
         logger = setup_logging(logging_level)
+
+        # Ensure network is also registered in the trainer settings
+        Registry.mapping['trainer_mapping']['setting'].param['network'] = self.config['command']['network']
+        
         self.trainer = Registry.mapping['trainer_mapping']\
             [Registry.mapping['command_mapping']['setting'].param['task']](logger)
         self.task = Registry.mapping['task_mapping']\

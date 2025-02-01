@@ -68,6 +68,45 @@ def load_and_split_forward_data(
             save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
             save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
 
+    if mode == "jlgat":
+        agent_data = {agent_idx: [] for agent_idx in range(num_agents)}
+    
+        for record in data:
+            agent_idx = record[0]
+            states = record[1]
+            actions = record[2]
+            next_states = record[3]
+    
+            for state, action, next_state in zip(states, actions, next_states):
+                
+                one_hot_actions = np.concatenate([idx2onehot(np.array([action]), spices).flatten() for action in actions])
+                
+                agent_data[agent_idx].append((
+                    torch.tensor(state.flatten(), dtype=torch.float32),
+                    torch.tensor(one_hot_actions.flatten(), dtype=torch.float32),
+                    torch.tensor(next_state.flatten(), dtype=torch.float32)
+                ))
+    
+        # Now, split and save data for each agent
+        for agent_idx, agent_records in agent_data.items():
+            # Concatenate states and actions for each agent
+            features = torch.cat([torch.cat((rec[0], rec[1])).unsqueeze(0) for rec in agent_records])
+            targets = torch.cat([rec[2].unsqueeze(0) for rec in agent_records])
+    
+            # Split the data into train and test sets
+            features_train, features_test, targets_train, targets_test = train_test_split(
+                features.numpy(), targets.numpy(), test_size=test_size, random_state=random_seed
+            )
+    
+            # Prepare the train and test datasets
+            train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
+            test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
+    
+            # Save the data for each agent to separate files
+            save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
+            save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
+
+
     elif mode == "centralized":
         # Initialize lists to store states, actions, and next states
         state_t_list = []
@@ -152,6 +191,44 @@ def load_and_split_inverse_data(pkl_file_path, train_pkl_file, test_pkl_file, sp
 
             train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
             test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
+            save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
+            save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
+
+    if mode == "jlgat":
+        agent_data = {agent_idx: [] for agent_idx in range(num_agents)}
+    
+        for record in data:
+            agent_idx = record[0]
+            states = record[1]
+            actions = record[2]
+            next_states = record[3]
+    
+            for state, action, next_state in zip(states, actions, next_states):
+                
+                one_hot_actions = np.concatenate([idx2onehot(np.array([action]), spices).flatten() for action in actions])
+                
+                agent_data[agent_idx].append((
+                    torch.tensor(state.flatten(), dtype=torch.float32),
+                    torch.tensor(next_state.flatten(), dtype=torch.float32),
+                    torch.tensor(one_hot_actions.flatten(), dtype=torch.float32)
+                ))
+    
+        # Now, split and save data for each agent
+        for agent_idx, agent_records in agent_data.items():
+            # Concatenate states and actions for each agent
+            features = torch.cat([torch.cat((rec[0], rec[1])).unsqueeze(0) for rec in agent_records])
+            targets = torch.cat([rec[2].unsqueeze(0) for rec in agent_records])
+    
+            # Split the data into train and test sets
+            features_train, features_test, targets_train, targets_test = train_test_split(
+                features.numpy(), targets.numpy(), test_size=test_size, random_state=random_seed
+            )
+    
+            # Prepare the train and test datasets
+            train_data = [(features_train[i], targets_train[i]) for i in range(len(features_train))]
+            test_data = [(features_test[i], targets_test[i]) for i in range(len(features_test))]
+    
+            # Save the data for each agent to separate files
             save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
             save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
 
@@ -275,6 +352,8 @@ class NN_predictor(object):
         # Determine dataset path based on mode and agent_num
         if mode == "decentralized" and agent_num is not None:
             dataset_path = f"collected/ereal_train_full_agent_{agent_num}.pkl"
+        elif mode == "jlgat" and agent_num is not None:
+            dataset_path = f"collected/ereal_train_full_agent_{agent_num}.pkl"
         elif mode == "centralized":
             dataset_path = "collected/ereal_train_full.pkl"
         else:
@@ -355,7 +434,7 @@ class NN_predictor(object):
         test_loss = 0.0
     
         # Load the validation dataset corresponding to the specified agent_num
-        if mode == "decentralized":
+        if mode == "decentralized" or mode == "jlgat":
             dataset_path = f'collected/ereal_test_full_agent_{agent_num}.pkl'
         else:
             dataset_path = 'collected/ereal_test_full.pkl'
@@ -479,6 +558,9 @@ class UNCERTAINTY_predictor(object):
         # Load the dataset corresponding to the specified agent_num
         if mode == "decentralized":
             dataset_path = f'collected/esim_train_full_agent_{agent_num}.pkl'
+        elif mode == "jlgat":
+            dataset_path = f"collected/esim_train_full_agent_{agent_num}.pkl"
+            self.criterion = nn.BCEWithLogitsLoss()
         else:
             self.criterion = nn.BCEWithLogitsLoss()
             dataset_path = 'collected/esim_train_full.pkl'
@@ -579,6 +661,9 @@ class UNCERTAINTY_predictor(object):
         # Load the validation dataset corresponding to the specified agent_num
         if mode == "decentralized":
             dataset_path = f'collected/esim_test_full_agent_{agent_num}.pkl'
+        elif mode == "jlgat":
+            dataset_path = f'collected/esim_test_full_agent_{agent_num}.pkl'
+            self.criterion = nn.BCEWithLogitsLoss()
         else:
             self.criterion = nn.BCEWithLogitsLoss()
             dataset_path = 'collected/esim_test_full.pkl'
