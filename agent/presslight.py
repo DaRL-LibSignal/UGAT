@@ -221,7 +221,7 @@ class PressLightAgent(RLAgent):
         state_t = torch.tensor(feature_t, dtype=torch.float32)
         state_tp = torch.tensor(feature_tp, dtype=torch.float32)
         # rewards:(64)
-        rewards = torch.tensor(np.array([item[1][3] for item in samples]), dtype=torch.float32)  # TODO: BETTER WA
+        rewards = torch.tensor(np.array([item[1][3] for item in samples]), dtype=torch.float32)
         # actions:(64,1)
         actions = torch.tensor(np.array([item[1][2] for item in samples]), dtype=torch.long)
         return state_t, state_tp, rewards, actions

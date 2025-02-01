@@ -145,6 +145,33 @@ class TSCTrainer(BaseTrainer):
                     self.agents_real[0].neighbors = 2
                     self.agents_real[1].neighbors = 3
                     self.agents_real[2].neighbors = 2
+
+                # Hardcoded values for # of neighbors for each agent until I fix later
+                elif self.net == "cityflow4x4":
+                
+                    # Bottom row
+                    self.agents_real[0].neighbors = 3
+                    self.agents_real[1].neighbors = 4
+                    self.agents_real[2].neighbors = 4
+                    self.agents_real[3].neighbors = 3
+
+                    # 2nd from bottom row
+                    self.agents_real[4].neighbors = 4
+                    self.agents_real[5].neighbors = 5
+                    self.agents_real[6].neighbors = 5
+                    self.agents_real[7].neighbors = 4
+
+                    # 3rd from bottom row
+                    self.agents_real[8].neighbors = 4
+                    self.agents_real[9].neighbors = 5
+                    self.agents_real[10].neighbors = 5
+                    self.agents_real[11].neighbors = 4
+
+                    # Top row
+                    self.agents_real[12].neighbors = 3
+                    self.agents_real[13].neighbors = 4
+                    self.agents_real[14].neighbors = 4
+                    self.agents_real[15].neighbors = 3
                 
                 for idx, ag in enumerate(self.agents_real):
 
@@ -157,6 +184,8 @@ class TSCTrainer(BaseTrainer):
                     
                     self.forward_models.append(self.forward_model)
                     self.inverse_models.append(self.inverse_model)
+
+                    # print(f"agent: {idx}, intersection: {ag.inter_obj.id}, roads: {ag.inter_obj.roads}")
                     
 
     def create_world(self):
@@ -461,12 +490,6 @@ class TSCTrainer(BaseTrainer):
                         elif self.gattype == "jlgat":
                             
                             if self.net == "cityflow1x3":
-
-                                combined_state = np.concatenate([state.flatten() for state in last_obs[:len(self.agents_sim)]])
-                                one_hot_actions = np.concatenate([
-                                idx2onehot(np.array([action]), 8).flatten() for action in actions[:len(self.agents_real)]
-                                ])
-                                
                                 for idx, ag in enumerate(self.agents_sim):
                                     if idx == 0:  # Agent 0: Uses its own state + agent 1's state + its own & agent 1's actions
                                         relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten()])
@@ -541,6 +564,92 @@ class TSCTrainer(BaseTrainer):
                     
                                         actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
                                         grounded_action_count += 1
+                                        
+                            elif self.net == "cityflow4x4":
+
+                                agent_info_map = {
+                                    0: [0, 1, 4],  # Agent 0 gets info from itself, agent 1, and agent 4
+                                    1: [0, 1, 2, 5],
+                                    2: [1, 2, 3, 6],
+                                    3: [2, 3, 7],
+                                    4: [0, 4, 5, 8],
+                                    5: [1, 4, 5, 6, 9],
+                                    6: [2, 5, 6, 7, 10],
+                                    7: [3, 6, 7, 11],
+                                    8: [4, 8, 9, 12],
+                                    9: [5, 8, 9, 10, 13],
+                                    10: [6, 9, 10, 11, 14],
+                                    11: [7, 10, 11, 15],
+                                    12: [8, 12, 13],
+                                    13: [9, 12, 13, 14],
+                                    14: [10, 13, 14, 15],
+                                    15: [11, 14, 15]
+                                }
+                                
+                                for idx, ag in enumerate(self.agents_sim):
+                                    relevant_indices = agent_info_map.get(idx, [])
+                                    
+                                    # Collect relevant states
+                                    relevant_states = np.concatenate([last_obs[i].flatten() for i in relevant_indices])
+                                    
+                                    # Collect relevant actions
+                                    relevant_actions = np.concatenate([
+                                        idx2onehot(np.array([actions[i]]), 8).flatten() for i in relevant_indices])
+                            
+                                    # Create state-action input
+                                    state_action = np.concatenate([relevant_states, relevant_actions], axis=0)
+                                    state_action = torch.from_numpy(state_action).float().to(self.device).unsqueeze(0)
+                            
+                                    # Predict next state
+                                    pred_next_state = self.forward_models[idx].model(state_action)
+                                    current_state_tensor = torch.from_numpy(relevant_states).float().to(self.device)
+                                    inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)
+                            
+                                    # Compute inverse model results
+                                    result = self.inverse_models[idx].model(inverse_input)
+                                    grounded_action, uncertainty = result[0], result[1]
+                            
+                                    if self.uncertainty_setting:
+                                        agent_uncertainty_sums[idx] += uncertainty.item()
+                                        if uncertainty < self.avg_agent_uncertainties[idx]:
+
+                                            # Determine the position of the active agent in its relevant indices list
+                                            active_agent_pos = {idx: agent_info_map[idx].index(idx) for idx in agent_info_map}
+                                            
+                                            batch_size, num_elements = grounded_action.shape
+                                            new_first_dim = num_elements // 8
+
+                                            # Reshape to (N, 8)
+                                            reshaped_tensor = grounded_action.view(new_first_dim, 8)
+
+                                            # Find where the agent's index appears in its own subset list
+                                            select_idx = active_agent_pos[idx]
+                                                
+                                            selected_tensor = reshaped_tensor[select_idx]
+                    
+                                            actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                 
+                                            grounded_action_count += 1
+                                    else:
+                                        
+                                        # Determine the position of the active agent in its relevant indices list
+                                        active_agent_pos = {idx: agent_info_map[idx].index(idx) for idx in agent_info_map}
+                                            
+                                        batch_size, num_elements = grounded_action.shape
+                                        new_first_dim = num_elements // 8
+
+                                        # Reshape to (N, 8)
+                                        reshaped_tensor = grounded_action.view(new_first_dim, 8)
+
+                                        # Find where the agent's index appears in its own subset list
+                                        select_idx = active_agent_pos[idx]
+                                                
+                                        selected_tensor = reshaped_tensor[select_idx]
+                    
+                                        actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                 
+                                        grounded_action_count += 1
+                            
     
                     actions = actions.flatten()
                     rewards_list = []
@@ -749,9 +858,24 @@ class TSCTrainer(BaseTrainer):
                     state_action_next_state.append((1, np.array(last_obs).reshape(1, -1), actions.reshape(-1, 1), np.array(obs).reshape(1, -1)))
                     state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=1), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), np.concatenate([obs[1], obs[2]], axis=1)))
 
-                    # print(f"state: {np.array(last_obs).reshape(1, -1).shape}")
-                    # print(f"actions: {actions.reshape(-1, 1).shape}")
-                    # print(f"next state: {np.array(obs).reshape(1, -1).shape}")
+                elif mode == "jlgat" and self.net == "cityflow4x4":
+                    # Joint local information storage for cityflow4x4 network
+                    state_action_next_state.append((0, np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1), np.concatenate([actions[i] for i in [0, 1, 4]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1)))
+                    state_action_next_state.append((1, np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1), np.concatenate([actions[i] for i in [0, 1, 2, 5]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1)))
+                    state_action_next_state.append((2, np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1), np.concatenate([actions[i] for i in [1, 2, 3, 6]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1)))
+                    state_action_next_state.append((3, np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1), np.concatenate([actions[i] for i in [2, 3, 7]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1)))
+                    state_action_next_state.append((4, np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1), np.concatenate([actions[i] for i in [0, 4, 5, 8]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1)))
+                    state_action_next_state.append((5, np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1), np.concatenate([actions[i] for i in [1, 4, 5, 6, 9]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1)))
+                    state_action_next_state.append((6, np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1), np.concatenate([actions[i] for i in [2, 5, 6, 7, 10]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1)))
+                    state_action_next_state.append((7, np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1), np.concatenate([actions[i] for i in [3, 6, 7, 11]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1)))
+                    state_action_next_state.append((8, np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1), np.concatenate([actions[i] for i in [4, 8, 9, 12]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1)))
+                    state_action_next_state.append((9, np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1), np.concatenate([actions[i] for i in [5, 8, 9, 10, 13]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1)))
+                    state_action_next_state.append((10, np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1), np.concatenate([actions[i] for i in [6, 9, 10, 11, 14]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1)))
+                    state_action_next_state.append((11, np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1), np.concatenate([actions[i] for i in [7, 10, 11, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1)))
+                    state_action_next_state.append((12, np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1), np.concatenate([actions[i] for i in [8, 12, 13]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1)))
+                    state_action_next_state.append((13, np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1), np.concatenate([actions[i] for i in [9, 12, 13, 14]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1)))
+                    state_action_next_state.append((14, np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1), np.concatenate([actions[i] for i in [10, 13, 14, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1)))
+                    state_action_next_state.append((15, np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1), np.concatenate([actions[i] for i in [11, 14, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1)))
 
                     
                 else:
@@ -817,9 +941,24 @@ class TSCTrainer(BaseTrainer):
                     state_action_next_state.append((1, np.array(last_obs).reshape(1, -1), actions.reshape(-1, 1), np.array(obs).reshape(1, -1)))
                     state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=1), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), np.concatenate([obs[1], obs[2]], axis=1)))
 
-                    # print(f"state: {np.array(last_obs).shape}")
-                    # print(f"actions: {actions.shape}")
-                    # print(f"next state: {np.array(obs).shape}")
+                elif mode == "jlgat" and self.net == "cityflow4x4":
+                    # Joint local information storage for cityflow4x4 network
+                    state_action_next_state.append((0, np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1), np.concatenate([actions[i] for i in [0, 1, 4]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1)))
+                    state_action_next_state.append((1, np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1), np.concatenate([actions[i] for i in [0, 1, 2, 5]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1)))
+                    state_action_next_state.append((2, np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1), np.concatenate([actions[i] for i in [1, 2, 3, 6]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1)))
+                    state_action_next_state.append((3, np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1), np.concatenate([actions[i] for i in [2, 3, 7]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1)))
+                    state_action_next_state.append((4, np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1), np.concatenate([actions[i] for i in [0, 4, 5, 8]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1)))
+                    state_action_next_state.append((5, np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1), np.concatenate([actions[i] for i in [1, 4, 5, 6, 9]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1)))
+                    state_action_next_state.append((6, np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1), np.concatenate([actions[i] for i in [2, 5, 6, 7, 10]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1)))
+                    state_action_next_state.append((7, np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1), np.concatenate([actions[i] for i in [3, 6, 7, 11]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1)))
+                    state_action_next_state.append((8, np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1), np.concatenate([actions[i] for i in [4, 8, 9, 12]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1)))
+                    state_action_next_state.append((9, np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1), np.concatenate([actions[i] for i in [5, 8, 9, 10, 13]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1)))
+                    state_action_next_state.append((10, np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1), np.concatenate([actions[i] for i in [6, 9, 10, 11, 14]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1)))
+                    state_action_next_state.append((11, np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1), np.concatenate([actions[i] for i in [7, 10, 11, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1)))
+                    state_action_next_state.append((12, np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1), np.concatenate([actions[i] for i in [8, 12, 13]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1)))
+                    state_action_next_state.append((13, np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1), np.concatenate([actions[i] for i in [9, 12, 13, 14]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1)))
+                    state_action_next_state.append((14, np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1), np.concatenate([actions[i] for i in [10, 13, 14, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1)))
+                    state_action_next_state.append((15, np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1), np.concatenate([actions[i] for i in [11, 14, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1)))
                 
                 else:
                     state_action_next_state.append((last_obs, actions, obs))
