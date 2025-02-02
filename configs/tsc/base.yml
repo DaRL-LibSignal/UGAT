@@ -33,6 +33,7 @@ trainer:
   gat: True
   gattype: "jlgat"
   uncertainty: True
+  delayedgat: False
   training_iterations: 1
 
 model:

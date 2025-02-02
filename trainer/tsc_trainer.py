@@ -52,6 +52,7 @@ class TSCTrainer(BaseTrainer):
         self.gat = Registry.mapping['trainer_mapping']['setting'].param['gat']
         self.gattype = Registry.mapping['trainer_mapping']['setting'].param['gattype']
         self.uncertainty_setting = Registry.mapping['trainer_mapping']['setting'].param['uncertainty']
+        self.delayedgat = Registry.mapping['trainer_mapping']['setting'].param['delayedgat']
         
         # replay file is only valid in cityflow now. 
         # TODO: support SUMO and Openengine later
@@ -273,20 +274,45 @@ class TSCTrainer(BaseTrainer):
         '''
         Main training flow
         '''
-        # Run for a set number of episodes
-        for e in range(self.episodes):
-    
-            # Sim rollout + collect data
-            self.sim_rollout(e, self.gattype)
-    
-            # Real rollout + collect data
-            self.train_test(e, self.gattype)
-    
-            # Update GAT models
-            self.gat_training(e)
+        if self.delayedgat == True:
+            # Run for a set number of episodes
+            for e in range(self.episodes):
+        
+                # Sim rollout + collect data
+                self.sim_rollout(e, self.gattype)
+        
+                # Real rollout + collect data
+                self.train_test(e, self.gattype)
+        
+                # Update GAT models
+                self.gat_training(e)
 
-            # Run policy training for some number of iterations
-            self.policy_training(e)
+                # Delay GAT training until episode 150
+                if e < 150:
+                    # Run regular policy training for some number of iterations
+                    self.gat = False
+                    self.policy_training(e)
+                    self.gat = True
+                else:
+                    # Run GAT policy training for some number of iterations
+                    self.gat = True
+                    self.policy_training(e)
+
+        else:
+            # Run for a set number of episodes
+            for e in range(self.episodes):
+        
+                # Sim rollout + collect data
+                self.sim_rollout(e, self.gattype)
+        
+                # Real rollout + collect data
+                self.train_test(e, self.gattype)
+        
+                # Update GAT models
+                self.gat_training(e)
+    
+                # Run policy training for some number of iterations
+                self.policy_training(e)
 
     def train(self):
         '''
