@@ -317,7 +317,7 @@ class TSCTrainer(BaseTrainer):
                 self.gat_training(e)
 
                 # Delay GAT training until episode 150
-                if e < 150:
+                if e < 200:
                     # Run regular policy training for some number of iterations
                     self.gat = False
                     self.policy_training(e)
