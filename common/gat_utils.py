@@ -194,7 +194,7 @@ def load_and_split_inverse_data(pkl_file_path, train_pkl_file, test_pkl_file, sp
             save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
             save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
 
-    if mode == "jlgat":
+    elif mode == "jlgat":
         agent_data = {agent_idx: [] for agent_idx in range(num_agents)}
     
         for record in data:
