@@ -54,6 +54,7 @@ class TSCTrainer(BaseTrainer):
         self.uncertainty_setting = Registry.mapping['trainer_mapping']['setting'].param['uncertainty']
         self.delayedgat = Registry.mapping['trainer_mapping']['setting'].param['delayedgat']
         self.oaat = Registry.mapping['trainer_mapping']['setting'].param['oaat']
+        self.local_grounding_only = Registry.mapping['trainer_mapping']['setting'].param['local_grounding_only']
         self.oaat_num = 0
         
         # replay file is only valid in cityflow now. 
@@ -688,6 +689,57 @@ class TSCTrainer(BaseTrainer):
                                         # If one agent at a time and not current agent, no GAT allowed...
                                         elif self.oaat:
                                             agent_uncertainty_sums[idx] += uncertainty.item()
+
+                                        elif self.local_grounding_only:
+
+                                            # Ground agent 1 and 3 every other episode
+                                            if episode % 2 == 0:
+
+                                                agent_uncertainty_sums[idx] += uncertainty.item()
+                                                if uncertainty < self.avg_agent_uncertainties[idx] and idx in [0, 2]:
+                                                    
+                                                    batch_size, num_elements = grounded_action.shape
+                                                    new_first_dim = num_elements // 8
+        
+                                                    # Reshape to (N, 8)
+                                                    reshaped_tensor = grounded_action.view(new_first_dim, 8)
+        
+                                                    select_idx = idx
+        
+                                                    # If last agent, select the last spot for state and action
+                                                    if idx == 2:
+                                                        select_idx = 1
+                                                        
+                                                    selected_tensor = reshaped_tensor[select_idx]
+                            
+                                                    actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                    grounded_action_count += 1
+    
+                                                    ga_by_agent[idx] += 1
+                                                
+                                            else:
+
+                                                agent_uncertainty_sums[idx] += uncertainty.item()
+                                                if uncertainty < self.avg_agent_uncertainties[idx] and idx == 1:
+                                                    
+                                                    batch_size, num_elements = grounded_action.shape
+                                                    new_first_dim = num_elements // 8
+        
+                                                    # Reshape to (N, 8)
+                                                    reshaped_tensor = grounded_action.view(new_first_dim, 8)
+        
+                                                    select_idx = idx
+        
+                                                    # If last agent, select the last spot for state and action
+                                                    if idx == 2:
+                                                        select_idx = 1
+                                                        
+                                                    selected_tensor = reshaped_tensor[select_idx]
+                            
+                                                    actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                    grounded_action_count += 1
+    
+                                                    ga_by_agent[idx] += 1
                                         
                                         else:
                                             agent_uncertainty_sums[idx] += uncertainty.item()
@@ -860,8 +912,6 @@ class TSCTrainer(BaseTrainer):
 
                     # Update mean uncertainity for next episode
                     self.avg_agent_uncertainties[idx] = np.mean(self.last_two_uncertainties[idx])
-
-                print(f"grounded for agent: {self.oaat_num}")
 
                 if self.oaat_num < len(self.agents_sim) - 1:
                     self.oaat_num += 1
