@@ -55,6 +55,7 @@ class TSCTrainer(BaseTrainer):
         self.delayedgat = Registry.mapping['trainer_mapping']['setting'].param['delayedgat']
         self.oaat = Registry.mapping['trainer_mapping']['setting'].param['oaat']
         self.local_grounding_only = Registry.mapping['trainer_mapping']['setting'].param['local_grounding_only']
+        self.ground_original = Registry.mapping['trainer_mapping']['setting'].param['ground_original']
         self.oaat_num = 0
         
         # replay file is only valid in cityflow now. 
@@ -494,6 +495,8 @@ class TSCTrainer(BaseTrainer):
                         actions = np.stack([ag.sample() for ag in self.agents_sim])
     
                     actions_prob = [ag.get_action_prob(last_obs[idx], last_phase[idx]) for idx, ag in enumerate(self.agents_sim)]
+
+                    original_actions = actions
     
                     if self.gat:
                         if self.gattype == "centralized":
@@ -625,28 +628,58 @@ class TSCTrainer(BaseTrainer):
                             
                             if self.net == "cityflow1x3":
                                 for idx, ag in enumerate(self.agents_sim):
-                                    if idx == 0:  # Agent 0: Uses its own state + agent 1's state + its own & agent 1's actions
-                                        relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten()])
-                                        relevant_actions = np.concatenate([
-                                            idx2onehot(np.array([actions[0]]), 8).flatten(),
-                                            idx2onehot(np.array([actions[1]]), 8).flatten()
-                                        ])
+
+                                    # Ground based upon original intended actions
+                                    if self.ground_original:
                                     
-                                    elif idx == 1:  # Agent 1: Uses all agent states and actions
-                                        relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten(), last_obs[2].flatten()])
-                                        relevant_actions = np.concatenate([
-                                            idx2onehot(np.array([actions[0]]), 8).flatten(),
-                                            idx2onehot(np.array([actions[1]]), 8).flatten(),
-                                            idx2onehot(np.array([actions[2]]), 8).flatten()
-                                        ])
+                                        if idx == 0:  # Agent 0: Uses its own state + agent 1's state + its own & agent 1's actions
+                                            relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten()])
+                                            relevant_actions = np.concatenate([
+                                                idx2onehot(np.array([original_actions[0]]), 8).flatten(),
+                                                idx2onehot(np.array([original_actions[1]]), 8).flatten()
+                                            ])
                                         
-                                    elif idx == 2:  # Agent 2: Uses its own state + agent 1's state + its own & agent 1's actions
-                                        relevant_states = np.concatenate([last_obs[2].flatten(), last_obs[1].flatten()])
-                                        relevant_actions = np.concatenate([
-                                            idx2onehot(np.array([actions[2]]), 8).flatten(),
-                                            idx2onehot(np.array([actions[1]]), 8).flatten()
-                                        ])
-                            
+                                        elif idx == 1:  # Agent 1: Uses all agent states and actions
+                                            relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten(), last_obs[2].flatten()])
+                                            relevant_actions = np.concatenate([
+                                                idx2onehot(np.array([original_actions[0]]), 8).flatten(),
+                                                idx2onehot(np.array([original_actions[1]]), 8).flatten(),
+                                                idx2onehot(np.array([original_actions[2]]), 8).flatten()
+                                            ])
+                                            
+                                        elif idx == 2:  # Agent 2: Uses its own state + agent 1's state + its own & agent 1's actions
+                                            relevant_states = np.concatenate([last_obs[2].flatten(), last_obs[1].flatten()])
+                                            relevant_actions = np.concatenate([
+                                                idx2onehot(np.array([original_actions[2]]), 8).flatten(),
+                                                idx2onehot(np.array([original_actions[1]]), 8).flatten()
+                                            ])
+                                            
+                                    # Ground based upon grounded actions (cascade)
+                                    else:
+
+                                        if idx == 0:  # Agent 0: Uses its own state + agent 1's state + its own & agent 1's actions
+                                            relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten()])
+                                            relevant_actions = np.concatenate([
+                                                idx2onehot(np.array([actions[0]]), 8).flatten(),
+                                                idx2onehot(np.array([actions[1]]), 8).flatten()
+                                            ])
+                                        
+                                        elif idx == 1:  # Agent 1: Uses all agent states and actions
+                                            relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten(), last_obs[2].flatten()])
+                                            relevant_actions = np.concatenate([
+                                                idx2onehot(np.array([actions[0]]), 8).flatten(),
+                                                idx2onehot(np.array([actions[1]]), 8).flatten(),
+                                                idx2onehot(np.array([actions[2]]), 8).flatten()
+                                            ])
+                                            
+                                        elif idx == 2:  # Agent 2: Uses its own state + agent 1's state + its own & agent 1's actions
+                                            relevant_states = np.concatenate([last_obs[2].flatten(), last_obs[1].flatten()])
+                                            relevant_actions = np.concatenate([
+                                                idx2onehot(np.array([actions[2]]), 8).flatten(),
+                                                idx2onehot(np.array([actions[1]]), 8).flatten()
+                                            ])
+
+                                    
                                     # Create state-action input
                                     state_action = np.concatenate([relevant_states, relevant_actions], axis=0)
                                     state_action = torch.from_numpy(state_action).float().to(self.device).unsqueeze(0)
@@ -660,6 +693,7 @@ class TSCTrainer(BaseTrainer):
                                     result = self.inverse_models[idx].model(inverse_input)
                                     grounded_action, uncertainty = result[0], result[1]
 
+                                    # Use uncertainty
                                     if self.uncertainty_setting:
 
                                         # If one agent at a time and current agent is the select agent, they may ground their action...
@@ -690,6 +724,7 @@ class TSCTrainer(BaseTrainer):
                                         elif self.oaat:
                                             agent_uncertainty_sums[idx] += uncertainty.item()
 
+                                        # Only ground based on local observations and alternate which agents can ground
                                         elif self.local_grounding_only:
 
                                             # Ground agent 1 and 3 every other episode
@@ -716,7 +751,8 @@ class TSCTrainer(BaseTrainer):
                                                     grounded_action_count += 1
     
                                                     ga_by_agent[idx] += 1
-                                                
+                                                    
+                                            # Handle local grounding for agent 1  
                                             else:
 
                                                 agent_uncertainty_sums[idx] += uncertainty.item()
@@ -740,27 +776,8 @@ class TSCTrainer(BaseTrainer):
                                                     grounded_action_count += 1
     
                                                     ga_by_agent[idx] += 1
-                                        
-                                        else:
-                                            agent_uncertainty_sums[idx] += uncertainty.item()
-                                            if uncertainty < self.avg_agent_uncertainties[idx]:
                                                 
-                                                batch_size, num_elements = grounded_action.shape
-                                                new_first_dim = num_elements // 8
-    
-                                                # Reshape to (N, 8)
-                                                reshaped_tensor = grounded_action.view(new_first_dim, 8)
-    
-                                                select_idx = idx
-    
-                                                # If last agent, select the last spot for state and action
-                                                if idx == 2:
-                                                    select_idx = 1
-                                                    
-                                                selected_tensor = reshaped_tensor[select_idx]
-                        
-                                                actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
-                                                grounded_action_count += 1
+                                    # If no flags always ground every action
                                     else:
                                         
                                         batch_size, num_elements = grounded_action.shape

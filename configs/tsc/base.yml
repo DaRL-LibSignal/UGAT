@@ -36,6 +36,7 @@ trainer:
   delayedgat: False
   oaat: True
   local_grounding_only: False
+  ground_original: False
   training_iterations: 1
 
 model:
