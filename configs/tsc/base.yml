@@ -31,9 +31,10 @@ trainer:
   update_target_rate: 10
   test_when_train: True
   gat: True
-  gattype: "central_fwd_dec_inv"
+  gattype: "jlgat"
   uncertainty: True
   delayedgat: False
+  oaat: True
   training_iterations: 1
 
 model:
