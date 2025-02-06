@@ -777,6 +777,30 @@ class TSCTrainer(BaseTrainer):
                                                     grounded_action_count += 1
     
                                                     ga_by_agent[idx] += 1
+
+                                        # If none of the above settings, run the traditional UGAT approach
+                                        else:
+                                            agent_uncertainty_sums[idx] += uncertainty.item()
+                                            if uncertainty < self.avg_agent_uncertainties[idx]:
+                                                
+                                                batch_size, num_elements = grounded_action.shape
+                                                new_first_dim = num_elements // 8
+    
+                                                # Reshape to (N, 8)
+                                                reshaped_tensor = grounded_action.view(new_first_dim, 8)
+    
+                                                select_idx = idx
+    
+                                                # If last agent, select the last spot for state and action
+                                                if idx == 2:
+                                                    select_idx = 1
+                                                    
+                                                selected_tensor = reshaped_tensor[select_idx]
+                        
+                                                actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                grounded_action_count += 1
+
+                                                ga_by_agent[idx] += 1
                                                 
                                     # If no flags always ground every action
                                     else:

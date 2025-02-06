@@ -34,11 +34,11 @@ trainer:
   gattype: "jlgat"
   uncertainty: True
   delayedgat: False
-  oaat: True
+  oaat: False
   local_grounding_only: False
-  ground_original: False
+  ground_original: True
   training_iterations: 1
-  last_n_uncertainties: 5
+  last_n_uncertainties: 2
 
 model:
   name: "non-rl"
