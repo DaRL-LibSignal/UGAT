@@ -56,6 +56,7 @@ class TSCTrainer(BaseTrainer):
         self.oaat = Registry.mapping['trainer_mapping']['setting'].param['oaat']
         self.local_grounding_only = Registry.mapping['trainer_mapping']['setting'].param['local_grounding_only']
         self.ground_original = Registry.mapping['trainer_mapping']['setting'].param['ground_original']
+        self.last_n_uncertainties = Registry.mapping['trainer_mapping']['setting'].param['last_n_uncertainties']
         self.oaat_num = 0
         
         # replay file is only valid in cityflow now. 
@@ -924,7 +925,7 @@ class TSCTrainer(BaseTrainer):
 
                     # Update last_two_uncertainties
                     self.last_two_uncertainties[idx].append(agent_uncertainty_sums[idx] / 360)
-                    if len(self.last_two_uncertainties[idx]) > 2:
+                    if len(self.last_two_uncertainties[idx]) > self.last_n_uncertainties:
                         self.last_two_uncertainties[idx].pop(0)
 
                     # Update mean uncertainity for next episode
@@ -942,14 +943,14 @@ class TSCTrainer(BaseTrainer):
                 
                 # Update last_two_uncertainties
                 self.last_two_central_uncertainties.append(uncertainty_sum / 360)
-                if len(self.last_two_central_uncertainties) > 2:
+                if len(self.last_two_central_uncertainties) > self.last_n_uncertainties:
                     self.last_two_central_uncertainties.pop(0)
 
                 # Update mean uncertainity for next episode
                 self.mean_uncertainty = np.mean(self.last_two_central_uncertainties)
 
                 self.logger.info(
-                "Policy training episode: {}, grounded actions taken: {}, last two uncertainties: {}, avg uncertainty: {}".format(episode, grounded_action_count, self.last_two_central_uncertainties, self.mean_uncertainty))
+                "Policy training episode: {}, grounded actions taken: {}, last uncertainties: {}, avg uncertainty: {}".format(episode, grounded_action_count, self.last_two_central_uncertainties, self.mean_uncertainty))
 
 
             self.writeLog("TRAIN", e, self.metric_sim.real_average_travel_time(), \

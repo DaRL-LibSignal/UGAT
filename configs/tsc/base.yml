@@ -38,6 +38,7 @@ trainer:
   local_grounding_only: False
   ground_original: False
   training_iterations: 1
+  last_n_uncertainties: 5
 
 model:
   name: "non-rl"
