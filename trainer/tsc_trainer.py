@@ -983,7 +983,7 @@ class TSCTrainer(BaseTrainer):
                           mean_loss, self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(),
                           self.metric_sim.throughput())
             self.logger.info(
-                "Policy training episode: {}, iteration {}/{}, step:{}/{}, q_loss:{}, rewards:{}, queue:{}, delay:{}, throughput:{}".format(episode, e, self.training_iterations, i, self.steps, \
+                "Policy training episode: {}, iteration {}/{}, policy training avg travel time:{}, q_loss:{}, rewards:{}, queue:{}, delay:{}, throughput:{}".format(episode, e, self.training_iterations, self.metric_sim.real_average_travel_time(), \
                                                                                                             mean_loss,
                                                                                                             self.metric_sim.rewards(),
                                                                                                             self.metric_sim.queue(),
@@ -991,12 +991,6 @@ class TSCTrainer(BaseTrainer):
                                                                                                             int(self.metric_sim.throughput())))
             if e % self.save_rate == 0:
                 [ag.save_model(e=e) for ag in self.agents_sim]
-                
-            self.logger.info("Policy training episode: {}, iteration {}/{}, real avg travel time:{}".format(episode, e, self.training_iterations, self.metric_sim.real_average_travel_time()))
-            for j in range(len(self.world_sim.intersections)):
-                self.logger.debug(
-                    "Policy training episode: {}, iteration {}/{}, intersection:{}, mean_episode_reward:{}, mean_queue:{}".format(episode, e, self.training_iterations, j, self.metric_sim.lane_rewards()[j], \
-                                                                                                  self.metric_sim.lane_queue()[j]))
 
 
 
@@ -1196,10 +1190,9 @@ class TSCTrainer(BaseTrainer):
         with open(file_path, 'wb') as f:
             pkl.dump(state_action_next_state, f)
 
-            self.logger.info("Sim Rollout episode:{}/{}, real avg travel time:{}".format(e, self.episodes, self.metric_sim.real_average_travel_time()))
-        for j in range(len(self.world_sim.intersections)):
-            self.logger.debug("intersection:{}, mean_episode_reward:{}, mean_queue:{}".format(j, self.metric_sim.lane_rewards()[j], \
-                                                                                    self.metric_sim.lane_queue()[j]))
+            self.logger.info("Sim Rollout episode:{}/{}, sim avg travel time:{}, rewards:{}, queue:{}, delay:{}, throughput:{}".format(e, self.episodes, self.metric_sim.real_average_travel_time(), self.metric_sim.rewards(), self.metric_sim.queue(), self.metric_sim.delay(), int(self.metric_sim.throughput())))
+        #for j in range(len(self.world_sim.intersections)):
+            # self.logger.debug("intersection:{}, individual reward:{}, individual queue:{}, individual delay:{}, individual throughput:{}".format(j, self.metric_sim.lane_rewards()[j], self.metric_sim.queue()[j], self.metric_sim.delay()[j], int(self.metric_sim.throughput()[j])))
 
 
     def train_test(self, e, mode="centralized"):
