@@ -30,13 +30,13 @@ trainer:
   update_model_rate: 1
   update_target_rate: 10
   test_when_train: True
-  gat: True
-  gattype: "jlgat"
-  uncertainty: True
+  gat: False
+  gattype: ""
+  uncertainty: False
   delayedgat: False
   oaat: False
   local_grounding_only: False
-  ground_original: True
+  ground_original: False
   training_iterations: 1
   last_n_uncertainties: 2
 

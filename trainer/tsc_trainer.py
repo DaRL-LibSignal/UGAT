@@ -93,6 +93,8 @@ class TSCTrainer(BaseTrainer):
             print("All files in the 'collected' folder have been deleted.")
         else:
             print(f"The folder '{path}' does not exist.")
+
+        self.total_decision_num = 0
         
         # Initialize GAT models
         if self.gat == True:
