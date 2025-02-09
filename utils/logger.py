@@ -246,4 +246,5 @@ def setup_logging(level):
         )
         handler_file.setLevel(level)  # TODO: SET LEVEL
         root.addHandler(handler_file)
+        
     return root

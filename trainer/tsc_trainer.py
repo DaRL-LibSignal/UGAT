@@ -75,8 +75,18 @@ class TSCTrainer(BaseTrainer):
         self.log_file = os.path.join(Registry.mapping['logger_mapping']['path'].path,
                                      Registry.mapping['logger_mapping']['setting'].param['log_dir'],
                                      os.path.basename(self.logger.handlers[-1].baseFilename).rstrip(
-                                         '_BRF.log') + '_DTL.log'
+                                         '_BRF.log').rstrip(
+                                         '_ACT.log') + '_DTL.log'
                                      )
+
+        self.action_log_file = os.path.join(
+                Registry.mapping['logger_mapping']['path'].path,
+                Registry.mapping['logger_mapping']['setting'].param['log_dir'],
+                os.path.basename(self.logger.handlers[-1].baseFilename).rstrip('_BRF.log').rstrip('_DTL.log') + '_ACT.log'
+            )
+
+        
+
 
         # Path to the folder
         path = 'collected'
@@ -499,7 +509,8 @@ class TSCTrainer(BaseTrainer):
     
                     actions_prob = [ag.get_action_prob(last_obs[idx], last_phase[idx]) for idx, ag in enumerate(self.agents_sim)]
 
-                    original_actions = actions
+                    original_actions = actions.copy()
+                    grounded_actions = [9 for i in range(len(self.agents_sim))]
     
                     if self.gat:
                         if self.gattype == "centralized":
@@ -522,10 +533,12 @@ class TSCTrainer(BaseTrainer):
                                 if uncertainty < self.mean_uncertainty:
                                     grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
                                     actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
+                                    grounded_actions = actions
                                     grounded_action_count += len(self.agents_sim)
                             else:
                                 grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
                                 actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
+                                grounded_actions = actions
                                 grounded_action_count += len(self.agents_sim)
     
                         elif self.gattype == "decentralized":
@@ -546,9 +559,11 @@ class TSCTrainer(BaseTrainer):
                                     agent_uncertainty_sums[idx] += uncertainty.item()
                                     if uncertainty < self.avg_agent_uncertainties[idx]:
                                         actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                        grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
                                 else:
                                     actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                    grounded_actions = actions
                                     grounded_action_count += 1
 
                         elif self.gattype == "central_fwd_dec_inv":
@@ -583,9 +598,11 @@ class TSCTrainer(BaseTrainer):
                                     agent_uncertainty_sums[idx] += uncertainty.item()
                                     if uncertainty < self.avg_agent_uncertainties[idx]:
                                         actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                        grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
                                 else:
                                     actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                    grounded_actions[idx] = actions[idx]
                                     grounded_action_count += 1
 
                         elif self.gattype == "central_inv_dec_fwd":
@@ -620,10 +637,12 @@ class TSCTrainer(BaseTrainer):
                                 if uncertainty < self.mean_uncertainty:
                                     grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
                                     actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
+                                    grounded_actions = actions
                                     grounded_action_count += len(self.agents_sim)
                             else:
                                 grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
                                 actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
+                                grounded_actions = actions
                                 grounded_action_count += len(self.agents_sim)
 
                         # Currently setup for 1x3 only
@@ -719,6 +738,7 @@ class TSCTrainer(BaseTrainer):
                                                 selected_tensor = reshaped_tensor[select_idx]
                         
                                                 actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                grounded_actions[idx] = actions[idx]
                                                 grounded_action_count += 1
 
                                                 ga_by_agent[idx] += 1
@@ -751,6 +771,7 @@ class TSCTrainer(BaseTrainer):
                                                     selected_tensor = reshaped_tensor[select_idx]
                             
                                                     actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                    grounded_actions[idx] = actions[idx]
                                                     grounded_action_count += 1
     
                                                     ga_by_agent[idx] += 1
@@ -776,6 +797,7 @@ class TSCTrainer(BaseTrainer):
                                                     selected_tensor = reshaped_tensor[select_idx]
                             
                                                     actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                    grounded_actions[idx] = actions[idx]
                                                     grounded_action_count += 1
     
                                                     ga_by_agent[idx] += 1
@@ -800,6 +822,7 @@ class TSCTrainer(BaseTrainer):
                                                 selected_tensor = reshaped_tensor[select_idx]
                         
                                                 actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                grounded_actions[idx] = actions[idx]
                                                 grounded_action_count += 1
 
                                                 ga_by_agent[idx] += 1
@@ -822,6 +845,7 @@ class TSCTrainer(BaseTrainer):
                                         selected_tensor = reshaped_tensor[select_idx]
                     
                                         actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                        grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
                                         
                             elif self.net == "cityflow4x4":
@@ -887,7 +911,8 @@ class TSCTrainer(BaseTrainer):
                                             selected_tensor = reshaped_tensor[select_idx]
                     
                                             actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
-                                                 
+
+                                            grounded_actions[idx] = actions[idx]
                                             grounded_action_count += 1
                                     else:
                                         
@@ -906,7 +931,8 @@ class TSCTrainer(BaseTrainer):
                                         selected_tensor = reshaped_tensor[select_idx]
                     
                                         actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
-                                                 
+
+                                        grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
                             
     
@@ -937,6 +963,13 @@ class TSCTrainer(BaseTrainer):
                     if self.total_decision_num > self.learning_start and \
                             self.total_decision_num % self.update_target_rate == self.update_target_rate - 1:
                         [ag.update_target_network() for ag in self.agents_sim]
+
+                    # Ensure actions are in the correct format (list of numbers)
+                    original_actions = original_actions.flatten().tolist()
+                    grounded_actions_fixed = [item.item() if isinstance(item, np.ndarray) else item for item in grounded_actions]
+                    actions = actions.tolist()
+                    
+                    self.writeActionLog(episode, i, 3600, original_actions, grounded_actions_fixed, actions)
     
                     if all(dones):
                         break
@@ -989,6 +1022,8 @@ class TSCTrainer(BaseTrainer):
                                                                                                             self.metric_sim.queue(),
                                                                                                             self.metric_sim.delay(),
                                                                                                             int(self.metric_sim.throughput())))
+
+            
             if e % self.save_rate == 0:
                 [ag.save_model(e=e) for ag in self.agents_sim]
 
@@ -1421,3 +1456,22 @@ class TSCTrainer(BaseTrainer):
         log_handle = open(self.log_file, "a")
         log_handle.write(res + "\n")
         log_handle.close()
+
+    
+    def writeActionLog(self, episode_num, step, total_steps, orig_actions, grounded_actions, actions_taken):
+        '''
+        writeActionLog
+        Write log for record and debug, including episode information and actions taken by both the original and grounded agents in the specified format.
+    
+        :param episode_num: current episode number
+        :param total_episodes: total number of episodes
+        :param agent_actions: actions taken by the original agent
+        :param grounded_actions: actions taken by the grounded agent
+        :return: None
+        '''
+        res = f"Policy training episode:{episode_num}, step:{step}/{total_steps}, original actions:{orig_actions}, grounded actions:{grounded_actions}, actions taken: {actions_taken}"
+        
+        log_handle = open(self.action_log_file, "a")
+        log_handle.write(res + "\n")
+        log_handle.close()
+
