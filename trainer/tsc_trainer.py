@@ -53,11 +53,11 @@ class TSCTrainer(BaseTrainer):
         self.gattype = Registry.mapping['trainer_mapping']['setting'].param['gattype']
         self.uncertainty_setting = Registry.mapping['trainer_mapping']['setting'].param['uncertainty']
         self.delayedgat = Registry.mapping['trainer_mapping']['setting'].param['delayedgat']
-        self.oaat = Registry.mapping['trainer_mapping']['setting'].param['oaat']
-        self.local_grounding_only = Registry.mapping['trainer_mapping']['setting'].param['local_grounding_only']
+        self.grounding_pattern = Registry.mapping['trainer_mapping']['setting'].param['grounding_pattern']
         self.ground_original = Registry.mapping['trainer_mapping']['setting'].param['ground_original']
         self.last_n_uncertainties = Registry.mapping['trainer_mapping']['setting'].param['last_n_uncertainties']
-        self.oaat_num = 0
+
+        self.load_pretrained = Registry.mapping['trainer_mapping']['setting'].param['load_pretrained']
         
         # replay file is only valid in cityflow now. 
         # TODO: support SUMO and Openengine later
@@ -222,17 +222,19 @@ class TSCTrainer(BaseTrainer):
                 
                 for idx, ag in enumerate(self.agents_real):
 
+                    # Forward model outputs a single predicted next state based on joint local information
+                    # Initialized with the following dimensions: Joint local State: (Agent + Neighbors, State size), Joint local action: (Agent + Neighbors, Action size)
                     self.forward_model = NN_predictor(self.logger,
-                                                    (self.agents_real[0].ob_generator.ob_length * ag.neighbors + self.agents_real[0].action_space.n * ag.neighbors),
-                                                    self.agents_real[0].ob_generator.ob_length * ag.neighbors, self.device, gat_path, 'collected/ereal_train_full.pkl')
-                    self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * ag.neighbors * 2,
-                                                    self.agents_real[0].action_space.n * ag.neighbors, self.device, gat_path,
+                                                    (ag.neighbors, self.agents_real[0].ob_generator.ob_length), (ag.neighbors, self.agents_real[0].action_space.n),
+                                                    self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
+
+                    # Inverse model outputs a single predicted action based on joint local information (also added actions of neighbors to inverse model, assuming they're fixed)
+                    self.inverse_model = UNCERTAINTY_predictor(self.logger, (1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors - 1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors - 1, self.agents_real[0].action_space.n), (1, self.agents_real[0].ob_generator.ob_length),
+                                                    self.agents_real[0].action_space.n, self.device, gat_path,
                                                     'collected/esim_train_full.pkl', backward=True)
                     
                     self.forward_models.append(self.forward_model)
                     self.inverse_models.append(self.inverse_model)
-
-                    # print(f"agent: {idx}, intersection: {ag.inter_obj.id}, roads: {ag.inter_obj.roads}")
                     
 
     def create_world(self):
@@ -345,6 +347,14 @@ class TSCTrainer(BaseTrainer):
                     self.policy_training(e)
 
         else:
+
+            if self.load_pretrained:
+                for ag in self.agents_sim:
+                    ag.load_model(0, True)
+
+                for ag in self.agents_real:
+                    ag.load_model(0, True)
+            
             # Run for a set number of episodes
             for e in range(self.episodes):
         
@@ -359,6 +369,7 @@ class TSCTrainer(BaseTrainer):
     
                 # Run policy training for some number of iterations
                 self.policy_training(e)
+
 
     def train(self):
         '''
@@ -650,203 +661,117 @@ class TSCTrainer(BaseTrainer):
                             
                             if self.net == "cityflow1x3":
                                 for idx, ag in enumerate(self.agents_sim):
-
-                                    # Ground based upon original intended actions
-                                    if self.ground_original:
+                                            
+                                    # Ground based upon neighbor static actions (avoid cascade)
                                     
-                                        if idx == 0:  # Agent 0: Uses its own state + agent 1's state + its own & agent 1's actions
-                                            relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten()])
-                                            relevant_actions = np.concatenate([
-                                                idx2onehot(np.array([original_actions[0]]), 8).flatten(),
-                                                idx2onehot(np.array([original_actions[1]]), 8).flatten()
-                                            ])
-                                        
-                                        elif idx == 1:  # Agent 1: Uses all agent states and actions
-                                            relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten(), last_obs[2].flatten()])
-                                            relevant_actions = np.concatenate([
-                                                idx2onehot(np.array([original_actions[0]]), 8).flatten(),
-                                                idx2onehot(np.array([original_actions[1]]), 8).flatten(),
-                                                idx2onehot(np.array([original_actions[2]]), 8).flatten()
-                                            ])
-                                            
-                                        elif idx == 2:  # Agent 2: Uses its own state + agent 1's state + its own & agent 1's actions
-                                            relevant_states = np.concatenate([last_obs[2].flatten(), last_obs[1].flatten()])
-                                            relevant_actions = np.concatenate([
-                                                idx2onehot(np.array([original_actions[2]]), 8).flatten(),
-                                                idx2onehot(np.array([original_actions[1]]), 8).flatten()
-                                            ])
-                                            
-                                    # Ground based upon grounded actions (cascade)
-                                    else:
+                                    if idx == 0:  # Agent 0: Uses its own state + agent 1's state + its own & agent 1's actions
+                                        relevant_states = np.concatenate([last_obs[0], last_obs[1]])
+                                        relevant_actions = np.concatenate([
+                                        idx2onehot(np.array([actions[0]]), 8),
+                                        idx2onehot(np.array([actions[1]]), 8)
+                                        ])
 
-                                        if idx == 0:  # Agent 0: Uses its own state + agent 1's state + its own & agent 1's actions
-                                            relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten()])
-                                            relevant_actions = np.concatenate([
-                                                idx2onehot(np.array([actions[0]]), 8).flatten(),
-                                                idx2onehot(np.array([actions[1]]), 8).flatten()
-                                            ])
+                                        ind_state = last_obs[0]
+                                        neighbor_states = last_obs[1]
                                         
-                                        elif idx == 1:  # Agent 1: Uses all agent states and actions
-                                            relevant_states = np.concatenate([last_obs[0].flatten(), last_obs[1].flatten(), last_obs[2].flatten()])
-                                            relevant_actions = np.concatenate([
-                                                idx2onehot(np.array([actions[0]]), 8).flatten(),
-                                                idx2onehot(np.array([actions[1]]), 8).flatten(),
-                                                idx2onehot(np.array([actions[2]]), 8).flatten()
-                                            ])
+                                        neighbor_actions = idx2onehot(np.array([actions[1]]), 8)
+                                        
+                                    elif idx == 1:  # Agent 1: Uses all agent states and actions
+                                        relevant_states = np.concatenate([last_obs[0], last_obs[1], last_obs[2]])
+                                        relevant_actions = np.concatenate([
+                                        idx2onehot(np.array([actions[0].cpu().numpy()]) if isinstance(actions[0], torch.Tensor) else np.array([actions[0]]), 8),
+                                        idx2onehot(np.array([actions[1].cpu().numpy()]) if isinstance(actions[1], torch.Tensor) else np.array([actions[1]]), 8),
+                                        idx2onehot(np.array([actions[2].cpu().numpy()]) if isinstance(actions[2], torch.Tensor) else np.array([actions[2]]), 8)
+                                    ])
+
+                                        ind_state = last_obs[1]
+                                        neighbor_states = np.concatenate([last_obs[0], last_obs[2]])
+
+                                        neighbor_actions = np.concatenate([
+                                        idx2onehot(np.array([actions[0].cpu().numpy()]) if isinstance(actions[0], torch.Tensor) else np.array([actions[0]]), 8),
+                                        idx2onehot(np.array([actions[2].cpu().numpy()]) if isinstance(actions[2], torch.Tensor) else np.array([actions[2]]), 8)
+                                        ])
                                             
-                                        elif idx == 2:  # Agent 2: Uses its own state + agent 1's state + its own & agent 1's actions
-                                            relevant_states = np.concatenate([last_obs[2].flatten(), last_obs[1].flatten()])
-                                            relevant_actions = np.concatenate([
-                                                idx2onehot(np.array([actions[2]]), 8).flatten(),
-                                                idx2onehot(np.array([actions[1]]), 8).flatten()
-                                            ])
+                                    elif idx == 2:  # Agent 2: Uses its own state + agent 1's state + its own & agent 1's actions
+                                        relevant_states = np.concatenate([last_obs[1], last_obs[2]])
+                                        relevant_actions = np.concatenate([
+                                        idx2onehot(np.array([actions[1].cpu().numpy()]) if isinstance(actions[1], torch.Tensor) else np.array([actions[1]]), 8),
+                                        idx2onehot(np.array([actions[2].cpu().numpy()]) if isinstance(actions[2], torch.Tensor) else np.array([actions[2]]), 8)
+                                        ])
+
+                                        ind_state = last_obs[2]
+                                        neighbor_states = last_obs[1]
+                                        
+                                        neighbor_actions = idx2onehot(np.array([actions[1]]), 8)
 
                                     
-                                    # Create state-action input
-                                    state_action = np.concatenate([relevant_states, relevant_actions], axis=0)
-                                    state_action = torch.from_numpy(state_action).float().to(self.device).unsqueeze(0)
-                            
+                                    # Create tensors for use in input
+                                    relevant_states = torch.from_numpy(relevant_states).float().to(self.device).unsqueeze(0)
+                                    ind_state = torch.from_numpy(ind_state).float().to(self.device).unsqueeze(0)
+                                    neighbor_states = torch.from_numpy(neighbor_states).float().to(self.device).unsqueeze(0)
+                                    actions_ = torch.from_numpy(relevant_actions).float().to(self.device).unsqueeze(0)
+                                    neighbor_actions_tensor = torch.from_numpy(neighbor_actions).float().to(self.device).unsqueeze(0)
+
                                     # Predict next state
-                                    pred_next_state = self.forward_models[idx].model(state_action)
-                                    current_state_tensor = torch.from_numpy(relevant_states).float().to(self.device)
-                                    inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)
+                                    pred_next_state = self.forward_models[idx].model(relevant_states, actions_).unsqueeze(0)
                             
                                     # Compute inverse model results
-                                    result = self.inverse_models[idx].model(inverse_input)
+                                    result = self.inverse_models[idx].model(ind_state, neighbor_states, neighbor_actions_tensor, pred_next_state)
                                     grounded_action, uncertainty = result[0], result[1]
 
                                     # Use uncertainty
                                     if self.uncertainty_setting:
 
-                                        # If one agent at a time and current agent is the select agent, they may ground their action...
-                                        if self.oaat and self.oaat_num == idx:
-                                            agent_uncertainty_sums[idx] += uncertainty.item()
-                                            if uncertainty < self.avg_agent_uncertainties[idx]:
-                                                
-                                                batch_size, num_elements = grounded_action.shape
-                                                new_first_dim = num_elements // 8
-    
-                                                # Reshape to (N, 8)
-                                                reshaped_tensor = grounded_action.view(new_first_dim, 8)
-    
-                                                select_idx = idx
-    
-                                                # If last agent, select the last spot for state and action
-                                                if idx == 2:
-                                                    select_idx = 1
-                                                    
-                                                selected_tensor = reshaped_tensor[select_idx]
-                        
-                                                actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
-                                                grounded_actions[idx] = actions[idx]
-                                                grounded_action_count += 1
+                                        agent_uncertainty_sums[idx] += uncertainty.item()
 
-                                                ga_by_agent[idx] += 1
+                                        if self.grounding_pattern:
 
-                                        # If one agent at a time and not current agent, no GAT allowed...
-                                        elif self.oaat:
-                                            agent_uncertainty_sums[idx] += uncertainty.item()
-
-                                        # Only ground based on local observations and alternate which agents can ground
-                                        elif self.local_grounding_only:
-
-                                            # Ground agent 1 and 3 every other episode
                                             if episode % 2 == 0:
-
-                                                agent_uncertainty_sums[idx] += uncertainty.item()
-                                                if uncertainty < self.avg_agent_uncertainties[idx] and idx in [0, 2]:
-                                                    
-                                                    batch_size, num_elements = grounded_action.shape
-                                                    new_first_dim = num_elements // 8
-        
-                                                    # Reshape to (N, 8)
-                                                    reshaped_tensor = grounded_action.view(new_first_dim, 8)
-        
-                                                    select_idx = idx
-        
-                                                    # If last agent, select the last spot for state and action
-                                                    if idx == 2:
-                                                        select_idx = 1
-                                                        
-                                                    selected_tensor = reshaped_tensor[select_idx]
-                            
-                                                    actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
-                                                    grounded_actions[idx] = actions[idx]
-                                                    grounded_action_count += 1
-    
-                                                    ga_by_agent[idx] += 1
-                                                    
-                                            # Handle local grounding for agent 1  
+                                                ground_pattern = 0
                                             else:
+                                                ground_pattern = 1
+                                            
+                                            # If none of the above settings, run the traditional UGAT approach
+                                            if uncertainty < self.avg_agent_uncertainties[idx]:
 
-                                                agent_uncertainty_sums[idx] += uncertainty.item()
-                                                if uncertainty < self.avg_agent_uncertainties[idx] and idx == 1:
+                                                if ground_pattern == 0 and (idx == 0 or idx == 2):
                                                     
-                                                    batch_size, num_elements = grounded_action.shape
-                                                    new_first_dim = num_elements // 8
-        
-                                                    # Reshape to (N, 8)
-                                                    reshaped_tensor = grounded_action.view(new_first_dim, 8)
-        
-                                                    select_idx = idx
-        
-                                                    # If last agent, select the last spot for state and action
-                                                    if idx == 2:
-                                                        select_idx = 1
-                                                        
-                                                    selected_tensor = reshaped_tensor[select_idx]
-                            
-                                                    actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
+                                                    actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                    
                                                     grounded_actions[idx] = actions[idx]
                                                     grounded_action_count += 1
-    
+            
+                                                    ga_by_agent[idx] += 1
+
+                                                elif ground_pattern == 1 and idx == 1:
+                            
+                                                    actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                        
+                                                    grounded_actions[idx] = actions[idx]
+                                                    grounded_action_count += 1
+        
                                                     ga_by_agent[idx] += 1
 
                                         # If none of the above settings, run the traditional UGAT approach
-                                        else:
-                                            agent_uncertainty_sums[idx] += uncertainty.item()
-                                            if uncertainty < self.avg_agent_uncertainties[idx]:
-                                                
-                                                batch_size, num_elements = grounded_action.shape
-                                                new_first_dim = num_elements // 8
-    
-                                                # Reshape to (N, 8)
-                                                reshaped_tensor = grounded_action.view(new_first_dim, 8)
-    
-                                                select_idx = idx
-    
-                                                # If last agent, select the last spot for state and action
-                                                if idx == 2:
-                                                    select_idx = 1
-                                                    
-                                                selected_tensor = reshaped_tensor[select_idx]
+                                        
+                                        elif uncertainty < self.avg_agent_uncertainties[idx]:
                         
-                                                actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
-                                                grounded_actions[idx] = actions[idx]
-                                                grounded_action_count += 1
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                
+                                            grounded_actions[idx] = actions[idx]
+                                            grounded_action_count += 1
 
-                                                ga_by_agent[idx] += 1
+                                            ga_by_agent[idx] += 1
                                                 
                                     # If no flags always ground every action
                                     else:
                                         
-                                        batch_size, num_elements = grounded_action.shape
-                                        new_first_dim = num_elements // 8
-
-                                        # Reshape to (N, 8)
-                                        reshaped_tensor = grounded_action.view(new_first_dim, 8)
-
-                                        select_idx = idx
-
-                                        # If last agent, select the last spot for action
-                                        if idx == 2:
-                                            select_idx = 1
+                                        actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                 
-                                        selected_tensor = reshaped_tensor[select_idx]
-                    
-                                        actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
                                         grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
+
+                                        ga_by_agent[idx] += 1
                                         
                             elif self.net == "cityflow4x4":
 
@@ -878,62 +803,46 @@ class TSCTrainer(BaseTrainer):
                                     # Collect relevant actions
                                     relevant_actions = np.concatenate([
                                         idx2onehot(np.array([actions[i]]), 8).flatten() for i in relevant_indices])
+
+                                    # Update neighbor_actions by excluding the current agent's own action
+                                    neighbor_actions = np.concatenate([
+                                        idx2onehot(np.array([actions[i]]), 8).flatten() for i in relevant_indices if i != idx])
                             
-                                    # Create state-action input
-                                    state_action = np.concatenate([relevant_states, relevant_actions], axis=0)
-                                    state_action = torch.from_numpy(state_action).float().to(self.device).unsqueeze(0)
-                            
+                                    # Create tensors for use in input
+                                    relevant_states = torch.from_numpy(relevant_states).float().to(self.device).unsqueeze(0)
+                                    actions_ = torch.from_numpy(relevant_actions).float().reshape(1, -1).to(self.device)
+                                    neighbor_actions_tensor = torch.from_numpy(neighbor_actions).float().reshape(1, -1).to(self.device)
+
                                     # Predict next state
-                                    pred_next_state = self.forward_models[idx].model(state_action)
-                                    current_state_tensor = torch.from_numpy(relevant_states).float().to(self.device)
-                                    inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)
+                                    pred_next_state = self.forward_models[idx].model(relevant_states, actions_)
                             
                                     # Compute inverse model results
-                                    result = self.inverse_models[idx].model(inverse_input)
+                                    result = self.inverse_models[idx].model(relevant_states, pred_next_state, neighbor_actions_tensor)
                                     grounded_action, uncertainty = result[0], result[1]
-                            
+
+                                    # Use uncertainty
                                     if self.uncertainty_setting:
+
+                                        # If none of the above settings, run the traditional UGAT approach
                                         agent_uncertainty_sums[idx] += uncertainty.item()
                                         if uncertainty < self.avg_agent_uncertainties[idx]:
-
-                                            # Determine the position of the active agent in its relevant indices list
-                                            active_agent_pos = {idx: agent_info_map[idx].index(idx) for idx in agent_info_map}
-                                            
-                                            batch_size, num_elements = grounded_action.shape
-                                            new_first_dim = num_elements // 8
-
-                                            # Reshape to (N, 8)
-                                            reshaped_tensor = grounded_action.view(new_first_dim, 8)
-
-                                            # Find where the agent's index appears in its own subset list
-                                            select_idx = active_agent_pos[idx]
+                        
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                 
-                                            selected_tensor = reshaped_tensor[select_idx]
-                    
-                                            actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
-
                                             grounded_actions[idx] = actions[idx]
                                             grounded_action_count += 1
+
+                                            ga_by_agent[idx] += 1
+                                                
+                                    # If no flags always ground every action
                                     else:
                                         
-                                        # Determine the position of the active agent in its relevant indices list
-                                        active_agent_pos = {idx: agent_info_map[idx].index(idx) for idx in agent_info_map}
-                                            
-                                        batch_size, num_elements = grounded_action.shape
-                                        new_first_dim = num_elements // 8
-
-                                        # Reshape to (N, 8)
-                                        reshaped_tensor = grounded_action.view(new_first_dim, 8)
-
-                                        # Find where the agent's index appears in its own subset list
-                                        select_idx = active_agent_pos[idx]
+                                        actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                 
-                                        selected_tensor = reshaped_tensor[select_idx]
-                    
-                                        actions[idx] = torch.argmax(selected_tensor, dim=0).cpu().item()
-
                                         grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
+
+                                        ga_by_agent[idx] += 1
                             
     
                     actions = actions.flatten()
@@ -990,11 +899,6 @@ class TSCTrainer(BaseTrainer):
                     # Update mean uncertainity for next episode
                     self.avg_agent_uncertainties[idx] = np.mean(self.last_two_uncertainties[idx])
 
-                if self.oaat_num < len(self.agents_sim) - 1:
-                    self.oaat_num += 1
-                else:
-                    self.oaat_num = 0
-
                 self.logger.info(
                 "Policy training episode: {}, grounded actions taken: {}, last two uncertainties: {}, avg agent uncertainties: {}, grounded actions by agent: {}".format(episode, grounded_action_count, self.last_two_uncertainties, self.avg_agent_uncertainties, ga_by_agent))
 
@@ -1023,9 +927,8 @@ class TSCTrainer(BaseTrainer):
                                                                                                             self.metric_sim.delay(),
                                                                                                             int(self.metric_sim.throughput())))
 
-            
-            if e % self.save_rate == 0:
-                [ag.save_model(e=e) for ag in self.agents_sim]
+            # if e % self.save_rate == 0:
+            #     [ag.save_model(e=e) for ag in self.agents_sim]
 
 
 
@@ -1166,7 +1069,7 @@ class TSCTrainer(BaseTrainer):
                 # Get agent actions
                 actions = []
                 for idx, ag in enumerate(self.agents_sim):
-                    actions.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))
+                    actions.append(ag.get_action(last_obs[idx], last_phase[idx], test=True))
                 actions = np.stack(actions)
     
                 # Perform actions for the specified interval and collect data
@@ -1183,31 +1086,57 @@ class TSCTrainer(BaseTrainer):
                     # Store the transition (agent_index, state, action, next_state) for each agent
                     for idx, (state, action, next_state) in enumerate(zip(last_obs, actions, obs)):
                         state_action_next_state.append((idx, state, action, next_state))
-                
+
+                # Data format is (Individual state, Joint-local state for neighbors, actions taken by neighbors, next individual state, individual action to cause transition)
                 elif mode == "jlgat" and self.net == "cityflow1x3":
                     # Joint local information storage for cityflow1x3 network
-                    state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=1), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), np.concatenate([obs[0], obs[1]], axis=1)))
-                    state_action_next_state.append((1, np.array(last_obs).reshape(1, -1), actions.reshape(-1, 1), np.array(obs).reshape(1, -1)))
-                    state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=1), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), np.concatenate([obs[1], obs[2]], axis=1)))
+                    state_action_next_state.append((0, last_obs[0], last_obs[1], actions[1].reshape(-1, 1), obs[0],  actions[0].reshape(-1, 1)))
+                    state_action_next_state.append((1, last_obs[1], np.concatenate([last_obs[0], last_obs[2]], axis=0), np.concatenate([actions[0], actions[2]], axis=0).reshape(-1, 1), obs[1], actions[1].reshape(-1, 1)))
+                    state_action_next_state.append((2, last_obs[2], last_obs[1], actions[1].reshape(-1, 1), obs[2],  actions[2].reshape(-1, 1)))
 
+                # Data format is (Joint-local state, actions taken by neighbors, next individual state, individual action to cause transition)
                 elif mode == "jlgat" and self.net == "cityflow4x4":
-                    # Joint local information storage for cityflow4x4 network
-                    state_action_next_state.append((0, np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1), np.concatenate([actions[i] for i in [0, 1, 4]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1)))
-                    state_action_next_state.append((1, np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1), np.concatenate([actions[i] for i in [0, 1, 2, 5]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1)))
-                    state_action_next_state.append((2, np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1), np.concatenate([actions[i] for i in [1, 2, 3, 6]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1)))
-                    state_action_next_state.append((3, np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1), np.concatenate([actions[i] for i in [2, 3, 7]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1)))
-                    state_action_next_state.append((4, np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1), np.concatenate([actions[i] for i in [0, 4, 5, 8]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1)))
-                    state_action_next_state.append((5, np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1), np.concatenate([actions[i] for i in [1, 4, 5, 6, 9]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1)))
-                    state_action_next_state.append((6, np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1), np.concatenate([actions[i] for i in [2, 5, 6, 7, 10]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1)))
-                    state_action_next_state.append((7, np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1), np.concatenate([actions[i] for i in [3, 6, 7, 11]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1)))
-                    state_action_next_state.append((8, np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1), np.concatenate([actions[i] for i in [4, 8, 9, 12]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1)))
-                    state_action_next_state.append((9, np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1), np.concatenate([actions[i] for i in [5, 8, 9, 10, 13]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1)))
-                    state_action_next_state.append((10, np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1), np.concatenate([actions[i] for i in [6, 9, 10, 11, 14]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1)))
-                    state_action_next_state.append((11, np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1), np.concatenate([actions[i] for i in [7, 10, 11, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1)))
-                    state_action_next_state.append((12, np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1), np.concatenate([actions[i] for i in [8, 12, 13]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1)))
-                    state_action_next_state.append((13, np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1), np.concatenate([actions[i] for i in [9, 12, 13, 14]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1)))
-                    state_action_next_state.append((14, np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1), np.concatenate([actions[i] for i in [10, 13, 14, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1)))
-                    state_action_next_state.append((15, np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1), np.concatenate([actions[i] for i in [11, 14, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1)))
+                    agent_info_map = {
+                                    0: [0, 1, 4],  # Agent 0 gets info from itself, agent 1, and agent 4
+                                    1: [0, 1, 2, 5],
+                                    2: [1, 2, 3, 6],
+                                    3: [2, 3, 7],
+                                    4: [0, 4, 5, 8],
+                                    5: [1, 4, 5, 6, 9],
+                                    6: [2, 5, 6, 7, 10],
+                                    7: [3, 6, 7, 11],
+                                    8: [4, 8, 9, 12],
+                                    9: [5, 8, 9, 10, 13],
+                                    10: [6, 9, 10, 11, 14],
+                                    11: [7, 10, 11, 15],
+                                    12: [8, 12, 13],
+                                    13: [9, 12, 13, 14],
+                                    14: [10, 13, 14, 15],
+                                    15: [11, 14, 15]
+                                }
+                    
+                    for agent, neighbors in agent_info_map.items():
+                        
+                        # Exclude the agent's own actions from the list of neighbor actions
+                        neighbor_idx = [i for i in neighbors if i != agent]
+                        
+                        # Collect the joint-local state for the agent and its neighbors
+                        joint_local_state = np.concatenate([last_obs[i] for i in neighbor_idx], axis=1)
+                        
+                        # Collect actions taken by the neighbors (excluding the agent itself)
+                        actions_taken_by_neighbors = np.concatenate([actions[i] for i in neighbor_idx], axis=0).reshape(-1, 1)
+
+                        # Individual state
+                        individual_state = last_obs[agent]
+                        
+                        # Collect the next state for the individual agent
+                        next_state = obs[agent]
+
+                        # Collect the action for the individual agent
+                        individual_action = actions[agent]
+                        
+                        # Append the tuple to the list
+                        state_action_next_state.append((agent, individual_state, joint_local_state, actions_taken_by_neighbors, next_state, individual_action))
                     
                 else:
                     state_action_next_state.append((last_obs, actions, obs))
@@ -1266,30 +1195,31 @@ class TSCTrainer(BaseTrainer):
                     for idx, (obs_agent, action_agent) in enumerate(zip(last_obs, actions)):
                         state_action_next_state.append((idx, obs_agent, action_agent, obs[idx]))
 
+                # Joint Local state, Joint Local action, Individual next state
                 elif mode == "jlgat" and self.net == "cityflow1x3":
                     # Joint local information storage for cityflow1x3 network
-                    state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=1), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), np.concatenate([obs[0], obs[1]], axis=1)))
-                    state_action_next_state.append((1, np.array(last_obs).reshape(1, -1), actions.reshape(-1, 1), np.array(obs).reshape(1, -1)))
-                    state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=1), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), np.concatenate([obs[1], obs[2]], axis=1)))
+                    state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=0), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), obs[0]))
+                    state_action_next_state.append((1, np.array(last_obs).squeeze(axis=1), actions.reshape(-1, 1), obs[1]))
+                    state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=0), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), obs[2]))
 
                 elif mode == "jlgat" and self.net == "cityflow4x4":
                     # Joint local information storage for cityflow4x4 network
-                    state_action_next_state.append((0, np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1), np.concatenate([actions[i] for i in [0, 1, 4]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1)))
-                    state_action_next_state.append((1, np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1), np.concatenate([actions[i] for i in [0, 1, 2, 5]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1)))
-                    state_action_next_state.append((2, np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1), np.concatenate([actions[i] for i in [1, 2, 3, 6]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1)))
-                    state_action_next_state.append((3, np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1), np.concatenate([actions[i] for i in [2, 3, 7]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1)))
-                    state_action_next_state.append((4, np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1), np.concatenate([actions[i] for i in [0, 4, 5, 8]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1)))
-                    state_action_next_state.append((5, np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1), np.concatenate([actions[i] for i in [1, 4, 5, 6, 9]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1)))
-                    state_action_next_state.append((6, np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1), np.concatenate([actions[i] for i in [2, 5, 6, 7, 10]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1)))
-                    state_action_next_state.append((7, np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1), np.concatenate([actions[i] for i in [3, 6, 7, 11]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1)))
-                    state_action_next_state.append((8, np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1), np.concatenate([actions[i] for i in [4, 8, 9, 12]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1)))
-                    state_action_next_state.append((9, np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1), np.concatenate([actions[i] for i in [5, 8, 9, 10, 13]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1)))
-                    state_action_next_state.append((10, np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1), np.concatenate([actions[i] for i in [6, 9, 10, 11, 14]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1)))
-                    state_action_next_state.append((11, np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1), np.concatenate([actions[i] for i in [7, 10, 11, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1)))
-                    state_action_next_state.append((12, np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1), np.concatenate([actions[i] for i in [8, 12, 13]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1)))
-                    state_action_next_state.append((13, np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1), np.concatenate([actions[i] for i in [9, 12, 13, 14]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1)))
-                    state_action_next_state.append((14, np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1), np.concatenate([actions[i] for i in [10, 13, 14, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1)))
-                    state_action_next_state.append((15, np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1), np.concatenate([actions[i] for i in [11, 14, 15]], axis=0).reshape(-1, 1), np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1)))
+                    state_action_next_state.append((0, np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1), np.concatenate([actions[i] for i in [0, 1, 4]], axis=0).reshape(-1, 1), obs[0]))
+                    state_action_next_state.append((1, np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1), np.concatenate([actions[i] for i in [0, 1, 2, 5]], axis=0).reshape(-1, 1), obs[1]))
+                    state_action_next_state.append((2, np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1), np.concatenate([actions[i] for i in [1, 2, 3, 6]], axis=0).reshape(-1, 1), obs[2]))
+                    state_action_next_state.append((3, np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1), np.concatenate([actions[i] for i in [2, 3, 7]], axis=0).reshape(-1, 1), obs[3]))
+                    state_action_next_state.append((4, np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1), np.concatenate([actions[i] for i in [0, 4, 5, 8]], axis=0).reshape(-1, 1), obs[4]))
+                    state_action_next_state.append((5, np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1), np.concatenate([actions[i] for i in [1, 4, 5, 6, 9]], axis=0).reshape(-1, 1), obs[5]))
+                    state_action_next_state.append((6, np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1), np.concatenate([actions[i] for i in [2, 5, 6, 7, 10]], axis=0).reshape(-1, 1), obs[6]))
+                    state_action_next_state.append((7, np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1), np.concatenate([actions[i] for i in [3, 6, 7, 11]], axis=0).reshape(-1, 1), obs[7]))
+                    state_action_next_state.append((8, np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1), np.concatenate([actions[i] for i in [4, 8, 9, 12]], axis=0).reshape(-1, 1), obs[8]))
+                    state_action_next_state.append((9, np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1), np.concatenate([actions[i] for i in [5, 8, 9, 10, 13]], axis=0).reshape(-1, 1), obs[9]))
+                    state_action_next_state.append((10, np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1), np.concatenate([actions[i] for i in [6, 9, 10, 11, 14]], axis=0).reshape(-1, 1), obs[10]))
+                    state_action_next_state.append((11, np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1), np.concatenate([actions[i] for i in [7, 10, 11, 15]], axis=0).reshape(-1, 1), obs[11]))
+                    state_action_next_state.append((12, np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1), np.concatenate([actions[i] for i in [8, 12, 13]], axis=0).reshape(-1, 1), obs[12]))
+                    state_action_next_state.append((13, np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1), np.concatenate([actions[i] for i in [9, 12, 13, 14]], axis=0).reshape(-1, 1), obs[13]))
+                    state_action_next_state.append((14, np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1), np.concatenate([actions[i] for i in [10, 13, 14, 15]], axis=0).reshape(-1, 1), obs[14]))
+                    state_action_next_state.append((15, np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1), np.concatenate([actions[i] for i in [11, 14, 15]], axis=0).reshape(-1, 1), obs[15]))
                 
                 else:
                     state_action_next_state.append((last_obs, actions, obs))
@@ -1314,126 +1244,6 @@ class TSCTrainer(BaseTrainer):
         
         return self.metric_real.real_average_travel_time()
 
-    def test(self, drop_load=True):
-        '''
-        test
-        Test process. Evaluate model performance.
-
-        :param drop_load: decide whether to load pretrained model's parameters
-        :return self.metric: including queue length, throughput, delay and travel time
-        '''
-        cityflow_trained_save = '/home/derekmei233/DaRL/Sim2Real_TSC/data/output_data/tsc/sim2real_paper/compare/cityflow_train_dqn_pickout/cityflow1x1/test/model/'
-        cityflow_sub = 'cityflow_dqn/cityflow1x1'
-        sumo_sub = 'sumo_dqn/sumohz1x1'
-
-        if Registry.mapping['command_mapping']['setting'].param['world'] == 'cityflow':
-            path_sub = cityflow_sub
-            if self.save_replay:
-                self.env.eng.set_save_replay(True)
-                self.env.eng.set_replay_file(os.path.join(self.replay_file_dir, f"final.txt"))
-            else:
-                self.env.eng.set_save_replay(False)
-        else:
-            path_sub = sumo_sub
-            
-        self.metric.clear()
-        # load_path = 'data/output_data/tsc/'+path_sub+'/test/model/'
-        load_path = cityflow_trained_save
-
-        if not drop_load:
-            print(".......not droping loading, generating random agents.......")
-            [ag.load_model(self.episodes) for ag in self.agents]
-
-        else:
-            # loaded_agent_list = []
-            import re
-
-            base_path = sys.path[0] + Registry.mapping['logger_mapping']['path'].path + '/model/'
-            if not os.path.exists(base_path):
-                os.makedirs(base_path)
-            print(base_path)
-            history_dir_path = sys.path[0] + "/history_save/" + Registry.mapping['command_mapping']['setting'].param['world'] + datetime.datetime.now().strftime('%Y-%m-%d:%H-%M-%S')
-            # os.makedirs(history_dir_path)
-            history_save_path = history_dir_path + "/history.txt"
-            # pass_save_path = history_dir_path + "/action_pass.txt"
-            num = 200
-            candidate_list = []
-            
-            # for files in os.listdir(load_path):  
-            #     print("files", files)
-            #     if files.startswith(str(num)):
-            #         candidate_list.append(files)
-                    # print(files)
-            candidate_list.sort(key=lambda l: int(re.findall('\d+', l[3:])[0]))
-            print(candidate_list)
-            for i in range(len(candidate_list)):
-                # [ag.load_model(e="", customized_path=base_path + candidate_list[i]) for ag in self.agents]
-                [ag.load_model(e="", customized_path=load_path + str(num) + "_" + str(ag.rank) + ".pt") for ag in
-                 self.agents]
-
-        attention_mat_list = []
-        obs = self.env.reset()
-        for a in self.agents:
-            a.reset()
-        print("-------self.test_steps-------")
-        print(self.test_steps)
-        # my record files:
-
-        history_record = []
-        struc = []
-        for a in self.agents:
-            a_struc = []
-            for ls in a.ob_generator.lanes:
-                for l in ls:
-                    a_struc.append(l)
-            struc.append(a_struc)
-        history_record.append(str(struc))
-
-        for i in range(self.test_steps):
-            if i % self.action_interval == 0:
-                phases = np.stack([ag.get_phase() for ag in self.agents])
-                actions = []
-                for idx, ag in enumerate(self.agents):
-                    temp = str([str(int(i)).ljust(5, ' ') for i in obs[idx][0]])
-                    temp_action = ag.get_action(obs[idx], phases[idx], test=True)
-                    # 3 placeholder to align output state
-                    actions.append(temp_action)
-
-                    temp +=  ":" + str(temp_action)
-                    temp = temp.replace(',', '').replace("'", "")
-                    history_record.append(temp)
-
-                actions = np.stack(actions)
-                rewards_list = []
-                for j in range(self.action_interval):
-                    obs, rewards, dones, _ = self.env.step(actions.flatten())
-
-                    i += 1
-                    rewards_list.append(np.stack(rewards))
-                rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
-                self.metric.update(rewards)
-            if all(dones):
-                break
-
-        # if Registry.mapping['command_mapping']['setting'].param['debug']:
-        # with open(file=load_path+"/record.txt", mode='a+', encoding='utf-8') as wf:
-        #     for line in history_record:
-        #         net_info =Registry.mapping['command_mapping']['setting'].param['network']
-        #         wf.writelines(net_info + ":   " +"Final Travel Time is %.4f, mean rewards: %.4f, queue: %.4f, delay: %.4f, throughput: %d" % (
-        #             self.metric.real_average_travel_time(), \
-        #             self.metric.rewards(), self.metric.queue(), self.metric.delay(), self.metric.throughput()
-        #             ) + "\n")
-        #     # calculate existing vehicles in each phase (fixedtime only)
-        #     traj = self.env.world.vehicle_trajectory
-        #     path_record = log_passing_lane_actinon(traj, self.world.intersections[0].startlanes)
-        #     # write_action_record(pass_save_path, path_record, a_struc)
-            
-
-        self.logger.info("Final Travel Time is %.4f, mean rewards: %.4f, queue: %.4f, delay: %.4f, throughput: %d" % (
-            self.metric.real_average_travel_time(), \
-            self.metric.rewards(), self.metric.queue(), self.metric.delay(), self.metric.throughput()))
-
-        return self.metric
 
     def writeLog(self, mode, step, travel_time, loss, cur_rwd, cur_queue, cur_delay, cur_throughput):
         '''

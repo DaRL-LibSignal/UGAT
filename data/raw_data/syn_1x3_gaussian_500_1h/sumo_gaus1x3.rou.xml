@@ -3,9 +3,9 @@
 		<!-- Default settings aligned with Cityflow 1x3: -->
         <!-- <vType id="pkw" length="5.0" width="2.0" minGap="2.5" maxSpeed="11.11" accel="2.0" decel="4.5"/> -->
         <!-- Rainy setting: -->
-        <!-- <vType id="pkw" length="5.0" width="2.0" minGap="2.5" maxSpeed="11.11" accel="0.75" decel="3.5" emergencyDecel="4.0" startupDelay="0.25"/> -->
+        <vType id="pkw" length="5.0" width="2.0" minGap="2.5" maxSpeed="11.11" accel="0.75" decel="3.5" emergencyDecel="4.0" startupDelay="0.25"/>
         <!-- Snowy setting: -->
-        <vType id="pkw" length="5.0" width="2.0" minGap="2.5" maxSpeed="11.11" accel="0.5" decel="1.5" emergencyDecel="2.0" startupDelay="0.5"/>
+        <!-- <vType id="pkw" length="5.0" width="2.0" minGap="2.5" maxSpeed="11.11" accel="0.5" decel="1.5" emergencyDecel="2.0" startupDelay="0.5"/> -->
 		<vehicle id="0" depart="0" type="pkw">
 			<route edges="road_0_1_0 road_1_1_0 road_2_1_3"/>
 		</vehicle>

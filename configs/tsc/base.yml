@@ -20,7 +20,7 @@ world:
 trainer:
   thread: 4
   ngpu: -1
-  learning_start: 5000
+  learning_start: 5000 # modified from original 5000 for debugging
   buffer_size: 5000
   steps: 3600
   test_steps: 3600
@@ -30,15 +30,15 @@ trainer:
   update_model_rate: 1
   update_target_rate: 10
   test_when_train: True
-  gat: True
-  gattype: "jlgat"
-  uncertainty: True
+  gat: False
+  gattype: ""
+  uncertainty: False
   delayedgat: False
-  oaat: False
-  local_grounding_only: False
+  grounding_pattern: False
   ground_original: False
   training_iterations: 1
   last_n_uncertainties: 2
+  load_pretrained: False
 
 model:
   name: "non-rl"

@@ -261,7 +261,7 @@ class PressLightAgent(RLAgent):
         weights = self.model.state_dict()
         self.target_model.load_state_dict(weights)
 
-    def load_model(self, e):
+    def load_model(self, e, pretrained=False):
         '''
         load_model
         Load model params of an episode.
@@ -269,8 +269,23 @@ class PressLightAgent(RLAgent):
         :param e: specified episode
         :return: None
         '''
-        model_name = os.path.join(
-            Registry.mapping['logger_mapping']['path'].path, 'model', f'{e}_{self.rank}.pt')
+        if pretrained:
+            pretrained_dir = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'pretrained')
+            # Iterate over files in the directory
+            matching_file = None
+            for file_name in os.listdir(pretrained_dir):
+                if file_name.endswith(f"_{self.rank}.pt"):  # Check if filename ends with _rank.pt
+                    matching_file = os.path.join(pretrained_dir, file_name)
+                    break  # Stop at the first match
+            
+            if matching_file:
+                model_name = matching_file
+            else:
+                raise FileNotFoundError(f"No model file found for rank {self.rank} in {pretrained_dir}")
+        else:
+            model_name = os.path.join(
+                Registry.mapping['logger_mapping']['path'].path, 'model', f'{e}_{self.rank}.pt')
+            
         self.model = self._build_model()
         self.model.load_state_dict(torch.load(model_name, weights_only=True))
         self.target_model = self._build_model()
