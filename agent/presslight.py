@@ -245,7 +245,9 @@ class PressLightAgent(RLAgent):
         self.optimizer.zero_grad()
         loss.backward()
         clip_grad_norm_(self.model.parameters(), self.grad_clip)
+
         self.optimizer.step()
+        
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
         return loss.clone().detach().numpy()
@@ -270,14 +272,19 @@ class PressLightAgent(RLAgent):
         :return: None
         '''
         if pretrained:
-            pretrained_dir = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'pretrained')
+            project_dir = os.getcwd()  # Get current project directory
+            pretrained_dir = os.path.join(project_dir, "pretrained")
+        
+            if not os.path.exists(pretrained_dir):
+                raise FileNotFoundError(f"Pretrained directory not found in {project_dir}")
+        
             # Iterate over files in the directory
             matching_file = None
             for file_name in os.listdir(pretrained_dir):
                 if file_name.endswith(f"_{self.rank}.pt"):  # Check if filename ends with _rank.pt
                     matching_file = os.path.join(pretrained_dir, file_name)
                     break  # Stop at the first match
-            
+        
             if matching_file:
                 model_name = matching_file
             else:

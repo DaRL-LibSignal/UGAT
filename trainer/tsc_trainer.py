@@ -10,6 +10,7 @@ from trainer.base_trainer import BaseTrainer
 import datetime
 from common.stat_utils import log_passing_lane_actinon, write_action_record
 import torch
+import torch.optim as optim
 
 
 print(torch.cuda.is_available())  # Should return True if CUDA is available
@@ -139,46 +140,46 @@ class TSCTrainer(BaseTrainer):
                 print(f"\n------- INITIALIZING GAT MODELS DECENTRALIZED -------\n")
                 gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
 
-                
+                # Single state and action for forward model and single states for inverse model input, identical to vanilla GAT
                 for i in range(num_agents):
                     self.forward_model = NN_predictor(self.logger,
-                                                    (self.agents_real[0].ob_generator.ob_length + self.agents_real[0].action_space.n),
+                                                    self.agents_real[0].ob_generator.ob_length, self.agents_real[0].action_space.n,
                                                     self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
-                    self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * 2,
+                    self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length,
                                                     self.agents_real[0].action_space.n, self.device, gat_path,
                                                     'collected/esim_train_full.pkl', backward=True)
                     
                     self.forward_models.append(self.forward_model)
                     self.inverse_models.append(self.inverse_model)
 
-            elif self.gattype == "central_fwd_dec_inv":
-                self.last_two_central_uncertainties = []
-                print(f"\n------- INITIALIZING GAT MODELS CENTRALIZED FWD / DECENTRALIZED INV-------\n")
-                gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
-                self.forward_model = NN_predictor(self.logger,
-                                                (self.agents_real[0].ob_generator.ob_length * num_agents + self.agents_real[0].action_space.n * num_agents),
-                                                self.agents_real[0].ob_generator.ob_length * num_agents, self.device, gat_path, 'collected/ereal_train_full.pkl')
-                for i in range(num_agents):
-                    self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * 2,
-                                                    self.agents_real[0].action_space.n, self.device, gat_path,
-                                                    'collected/esim_train_full.pkl', backward=True)
-                    self.inverse_models.append(self.inverse_model)
+            # elif self.gattype == "central_fwd_dec_inv":
+            #     self.last_two_central_uncertainties = []
+            #     print(f"\n------- INITIALIZING GAT MODELS CENTRALIZED FWD / DECENTRALIZED INV-------\n")
+            #     gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
+            #     self.forward_model = NN_predictor(self.logger,
+            #                                     (self.agents_real[0].ob_generator.ob_length * num_agents + self.agents_real[0].action_space.n * num_agents),
+            #                                     self.agents_real[0].ob_generator.ob_length * num_agents, self.device, gat_path, 'collected/ereal_train_full.pkl')
+            #     for i in range(num_agents):
+            #         self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * 2,
+            #                                         self.agents_real[0].action_space.n, self.device, gat_path,
+            #                                         'collected/esim_train_full.pkl', backward=True)
+            #         self.inverse_models.append(self.inverse_model)
 
-            elif self.gattype == "central_inv_dec_fwd":
-                self.last_two_central_uncertainties = []
-                print(f"\n------- INITIALIZING GAT MODELS CENTRALIZED INV / DECENTRALIZED FWD -------\n")
-                gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
+            # elif self.gattype == "central_inv_dec_fwd":
+            #     self.last_two_central_uncertainties = []
+            #     print(f"\n------- INITIALIZING GAT MODELS CENTRALIZED INV / DECENTRALIZED FWD -------\n")
+            #     gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
 
-                for i in range(num_agents):
-                    self.forward_model = NN_predictor(self.logger,
-                                                    (self.agents_real[0].ob_generator.ob_length + self.agents_real[0].action_space.n),
-                                                    self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
+            #     for i in range(num_agents):
+            #         self.forward_model = NN_predictor(self.logger,
+            #                                         (self.agents_real[0].ob_generator.ob_length + self.agents_real[0].action_space.n),
+            #                                         self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
                     
-                    self.forward_models.append(self.forward_model)
+            #         self.forward_models.append(self.forward_model)
 
-                self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * num_agents * 2,
-                                                self.agents_real[0].action_space.n * num_agents, self.device, gat_path,
-                                                'collected/esim_train_full.pkl', backward=True)
+            #     self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * num_agents * 2,
+            #                                     self.agents_real[0].action_space.n * num_agents, self.device, gat_path,
+            #                                     'collected/esim_train_full.pkl', backward=True)
 
             # Initialize JL-GAT models
             elif self.gattype == "jlgat":
@@ -351,12 +352,23 @@ class TSCTrainer(BaseTrainer):
             if self.load_pretrained:
                 for ag in self.agents_sim:
                     ag.load_model(0, True)
+                    ag.optimizer = optim.RMSprop(ag.model.parameters(),
+                                       lr=ag.learning_rate,
+                                       alpha=0.9, centered=False, eps=1e-7)
 
-                for ag in self.agents_real:
-                    ag.load_model(0, True)
+                # for ag in self.agents_real:
+                #     ag.load_model(0, True)
             
             # Run for a set number of episodes
             for e in range(self.episodes):
+
+                # for ag in self.agents_real:
+                #     print(f"Agent X params")
+                #     for param in ag.model.parameters():
+                #         print(param.mean().item())  # Print mean of parameters to check changes
+
+                #     for name, param in ag.model.named_parameters():
+                #         print(name, param.requires_grad)
         
                 # Sim rollout + collect data
                 self.sim_rollout(e, self.gattype)
@@ -752,16 +764,33 @@ class TSCTrainer(BaseTrainer):
         
                                                     ga_by_agent[idx] += 1
 
-                                        # If none of the above settings, run the traditional UGAT approach
-                                        
-                                        elif uncertainty < self.avg_agent_uncertainties[idx]:
-                        
+
+                                    # Use grounding pattern without uncertainty
+                                    elif self.grounding_pattern:
+
+                                        if episode % 2 == 0:
+                                            ground_pattern = 0
+                                        else:
+                                            ground_pattern = 1
+
+                                        if ground_pattern == 0 and (idx == 0 or idx == 2):
+                                                    
                                             actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
-                                                
+                                                    
                                             grounded_actions[idx] = actions[idx]
                                             grounded_action_count += 1
-
+            
                                             ga_by_agent[idx] += 1
+
+                                        elif ground_pattern == 1 and idx == 1:
+                            
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                        
+                                            grounded_actions[idx] = actions[idx]
+                                            grounded_action_count += 1
+        
+                                            ga_by_agent[idx] += 1
+                                    
                                                 
                                     # If no flags always ground every action
                                     else:
@@ -798,31 +827,38 @@ class TSCTrainer(BaseTrainer):
                                     relevant_indices = agent_info_map.get(idx, [])
                                     
                                     # Collect relevant states
-                                    relevant_states = np.concatenate([last_obs[i].flatten() for i in relevant_indices])
+                                    relevant_states = np.concatenate([last_obs[i] for i in relevant_indices])
+
+                                    # Collect neighbor relevant states
+                                    relevant_n_states = np.concatenate([last_obs[i] for i in relevant_indices if i != idx])
                                     
                                     # Collect relevant actions
                                     relevant_actions = np.concatenate([
-                                        idx2onehot(np.array([actions[i]]), 8).flatten() for i in relevant_indices])
+                                        idx2onehot(np.array([actions[i]]), 8) for i in relevant_indices])
 
                                     # Update neighbor_actions by excluding the current agent's own action
                                     neighbor_actions = np.concatenate([
-                                        idx2onehot(np.array([actions[i]]), 8).flatten() for i in relevant_indices if i != idx])
+                                        idx2onehot(np.array([actions[i]]), 8) for i in relevant_indices if i != idx])
+
+                                    ind_state = last_obs[idx]
                             
                                     # Create tensors for use in input
                                     relevant_states = torch.from_numpy(relevant_states).float().to(self.device).unsqueeze(0)
-                                    actions_ = torch.from_numpy(relevant_actions).float().reshape(1, -1).to(self.device)
-                                    neighbor_actions_tensor = torch.from_numpy(neighbor_actions).float().reshape(1, -1).to(self.device)
+                                    relevant_n_states = torch.from_numpy(relevant_n_states).float().to(self.device).unsqueeze(0)
+                                    actions_ = torch.from_numpy(relevant_actions).float().to(self.device).unsqueeze(0)
+                                    neighbor_actions_tensor = torch.from_numpy(neighbor_actions).float().to(self.device).unsqueeze(0)
+                                    ind_state = torch.from_numpy(ind_state).float().to(self.device).unsqueeze(0)
 
                                     # Predict next state
-                                    pred_next_state = self.forward_models[idx].model(relevant_states, actions_)
+                                    pred_next_state = self.forward_models[idx].model(relevant_states, actions_).unsqueeze(0)
                             
                                     # Compute inverse model results
-                                    result = self.inverse_models[idx].model(relevant_states, pred_next_state, neighbor_actions_tensor)
+                                    result = self.inverse_models[idx].model(ind_state, relevant_n_states, neighbor_actions_tensor, pred_next_state)
                                     grounded_action, uncertainty = result[0], result[1]
 
                                     # Use uncertainty
                                     if self.uncertainty_setting:
-
+                                                    
                                         # If none of the above settings, run the traditional UGAT approach
                                         agent_uncertainty_sums[idx] += uncertainty.item()
                                         if uncertainty < self.avg_agent_uncertainties[idx]:
@@ -1121,7 +1157,7 @@ class TSCTrainer(BaseTrainer):
                         neighbor_idx = [i for i in neighbors if i != agent]
                         
                         # Collect the joint-local state for the agent and its neighbors
-                        joint_local_state = np.concatenate([last_obs[i] for i in neighbor_idx], axis=1)
+                        joint_local_state = np.concatenate([last_obs[i] for i in neighbor_idx], axis=0)
                         
                         # Collect actions taken by the neighbors (excluding the agent itself)
                         actions_taken_by_neighbors = np.concatenate([actions[i] for i in neighbor_idx], axis=0).reshape(-1, 1)
@@ -1204,22 +1240,22 @@ class TSCTrainer(BaseTrainer):
 
                 elif mode == "jlgat" and self.net == "cityflow4x4":
                     # Joint local information storage for cityflow4x4 network
-                    state_action_next_state.append((0, np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=1), np.concatenate([actions[i] for i in [0, 1, 4]], axis=0).reshape(-1, 1), obs[0]))
-                    state_action_next_state.append((1, np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=1), np.concatenate([actions[i] for i in [0, 1, 2, 5]], axis=0).reshape(-1, 1), obs[1]))
-                    state_action_next_state.append((2, np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=1), np.concatenate([actions[i] for i in [1, 2, 3, 6]], axis=0).reshape(-1, 1), obs[2]))
-                    state_action_next_state.append((3, np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=1), np.concatenate([actions[i] for i in [2, 3, 7]], axis=0).reshape(-1, 1), obs[3]))
-                    state_action_next_state.append((4, np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=1), np.concatenate([actions[i] for i in [0, 4, 5, 8]], axis=0).reshape(-1, 1), obs[4]))
-                    state_action_next_state.append((5, np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=1), np.concatenate([actions[i] for i in [1, 4, 5, 6, 9]], axis=0).reshape(-1, 1), obs[5]))
-                    state_action_next_state.append((6, np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=1), np.concatenate([actions[i] for i in [2, 5, 6, 7, 10]], axis=0).reshape(-1, 1), obs[6]))
-                    state_action_next_state.append((7, np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=1), np.concatenate([actions[i] for i in [3, 6, 7, 11]], axis=0).reshape(-1, 1), obs[7]))
-                    state_action_next_state.append((8, np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=1), np.concatenate([actions[i] for i in [4, 8, 9, 12]], axis=0).reshape(-1, 1), obs[8]))
-                    state_action_next_state.append((9, np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=1), np.concatenate([actions[i] for i in [5, 8, 9, 10, 13]], axis=0).reshape(-1, 1), obs[9]))
-                    state_action_next_state.append((10, np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=1), np.concatenate([actions[i] for i in [6, 9, 10, 11, 14]], axis=0).reshape(-1, 1), obs[10]))
-                    state_action_next_state.append((11, np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=1), np.concatenate([actions[i] for i in [7, 10, 11, 15]], axis=0).reshape(-1, 1), obs[11]))
-                    state_action_next_state.append((12, np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=1), np.concatenate([actions[i] for i in [8, 12, 13]], axis=0).reshape(-1, 1), obs[12]))
-                    state_action_next_state.append((13, np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=1), np.concatenate([actions[i] for i in [9, 12, 13, 14]], axis=0).reshape(-1, 1), obs[13]))
-                    state_action_next_state.append((14, np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=1), np.concatenate([actions[i] for i in [10, 13, 14, 15]], axis=0).reshape(-1, 1), obs[14]))
-                    state_action_next_state.append((15, np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=1), np.concatenate([actions[i] for i in [11, 14, 15]], axis=0).reshape(-1, 1), obs[15]))
+                    state_action_next_state.append((0, np.concatenate([last_obs[i] for i in [0, 1, 4]], axis=0), np.concatenate([actions[i] for i in [0, 1, 4]], axis=0).reshape(-1, 1), obs[0]))
+                    state_action_next_state.append((1, np.concatenate([last_obs[i] for i in [0, 1, 2, 5]], axis=0), np.concatenate([actions[i] for i in [0, 1, 2, 5]], axis=0).reshape(-1, 1), obs[1]))
+                    state_action_next_state.append((2, np.concatenate([last_obs[i] for i in [1, 2, 3, 6]], axis=0), np.concatenate([actions[i] for i in [1, 2, 3, 6]], axis=0).reshape(-1, 1), obs[2]))
+                    state_action_next_state.append((3, np.concatenate([last_obs[i] for i in [2, 3, 7]], axis=0), np.concatenate([actions[i] for i in [2, 3, 7]], axis=0).reshape(-1, 1), obs[3]))
+                    state_action_next_state.append((4, np.concatenate([last_obs[i] for i in [0, 4, 5, 8]], axis=0), np.concatenate([actions[i] for i in [0, 4, 5, 8]], axis=0).reshape(-1, 1), obs[4]))
+                    state_action_next_state.append((5, np.concatenate([last_obs[i] for i in [1, 4, 5, 6, 9]], axis=0), np.concatenate([actions[i] for i in [1, 4, 5, 6, 9]], axis=0).reshape(-1, 1), obs[5]))
+                    state_action_next_state.append((6, np.concatenate([last_obs[i] for i in [2, 5, 6, 7, 10]], axis=0), np.concatenate([actions[i] for i in [2, 5, 6, 7, 10]], axis=0).reshape(-1, 1), obs[6]))
+                    state_action_next_state.append((7, np.concatenate([last_obs[i] for i in [3, 6, 7, 11]], axis=0), np.concatenate([actions[i] for i in [3, 6, 7, 11]], axis=0).reshape(-1, 1), obs[7]))
+                    state_action_next_state.append((8, np.concatenate([last_obs[i] for i in [4, 8, 9, 12]], axis=0), np.concatenate([actions[i] for i in [4, 8, 9, 12]], axis=0).reshape(-1, 1), obs[8]))
+                    state_action_next_state.append((9, np.concatenate([last_obs[i] for i in [5, 8, 9, 10, 13]], axis=0), np.concatenate([actions[i] for i in [5, 8, 9, 10, 13]], axis=0).reshape(-1, 1), obs[9]))
+                    state_action_next_state.append((10, np.concatenate([last_obs[i] for i in [6, 9, 10, 11, 14]], axis=0), np.concatenate([actions[i] for i in [6, 9, 10, 11, 14]], axis=0).reshape(-1, 1), obs[10]))
+                    state_action_next_state.append((11, np.concatenate([last_obs[i] for i in [7, 10, 11, 15]], axis=0), np.concatenate([actions[i] for i in [7, 10, 11, 15]], axis=0).reshape(-1, 1), obs[11]))
+                    state_action_next_state.append((12, np.concatenate([last_obs[i] for i in [8, 12, 13]], axis=0), np.concatenate([actions[i] for i in [8, 12, 13]], axis=0).reshape(-1, 1), obs[12]))
+                    state_action_next_state.append((13, np.concatenate([last_obs[i] for i in [9, 12, 13, 14]], axis=0), np.concatenate([actions[i] for i in [9, 12, 13, 14]], axis=0).reshape(-1, 1), obs[13]))
+                    state_action_next_state.append((14, np.concatenate([last_obs[i] for i in [10, 13, 14, 15]], axis=0), np.concatenate([actions[i] for i in [10, 13, 14, 15]], axis=0).reshape(-1, 1), obs[14]))
+                    state_action_next_state.append((15, np.concatenate([last_obs[i] for i in [11, 14, 15]], axis=0), np.concatenate([actions[i] for i in [11, 14, 15]], axis=0).reshape(-1, 1), obs[15]))
                 
                 else:
                     state_action_next_state.append((last_obs, actions, obs))

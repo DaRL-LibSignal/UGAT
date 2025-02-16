@@ -30,15 +30,15 @@ trainer:
   update_model_rate: 1
   update_target_rate: 10
   test_when_train: True
-  gat: False
-  gattype: ""
+  gat: True
+  gattype: "jlgat"
   uncertainty: False
   delayedgat: False
   grounding_pattern: False
   ground_original: False
   training_iterations: 1
   last_n_uncertainties: 2
-  load_pretrained: False
+  load_pretrained: True
 
 model:
   name: "non-rl"

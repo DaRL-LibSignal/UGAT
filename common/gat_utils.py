@@ -660,15 +660,6 @@ class UNCERTAINTY_predictor(object):
         
                 y_pred, uncertainty = result[0], result[1]
 
-                if mode == "decentralized":
-
-                    num_agents = y_pred.shape[1] // 8
-
-                    y_pred = y_pred.view(y_true.size(0) * num_agents, 8)
-                    y_true = y_true.view(y_true.size(0), num_agents, 8).argmax(dim=-1)
-    
-                    y_true = y_true.view(y_true.size(0) * num_agents)
-
                 # standard loss
                 loss = self.criterion(y_pred, y_true.squeeze(1))
                 
@@ -734,16 +725,7 @@ class UNCERTAINTY_predictor(object):
         
                 y_pred, uncertainty = result[0], result[1]
 
-                if mode == "decentralized":
-
-                    num_agents = y_pred.shape[1] // 8
-    
-                    y_pred = y_pred.view(y_true.size(0) * num_agents, 8)
-                    y_true = y_true.view(y_true.size(0), num_agents, 8).argmax(dim=-1)
-    
-                    y_true = y_true.view(y_true.size(0) * num_agents)
-                
-                # Compute the loss
+                # standard loss
                 loss = self.criterion(y_pred, y_true.squeeze(1))
                 
                 # Accumulate testing loss
@@ -769,27 +751,28 @@ class UNCERTAINTY_predictor(object):
     def make_model(self):
         self.model = Inverse_N_net(self.ind_state_dim, self.n_state_dim, self.action_dim, self.pred_state_dim, self.out_dim, self.backward).float()
 
-    def load_model(self):
-        if self.backward:
-            txt = 'inverse'
-        else:
-            txt = 'forward'
-        name = f"NN_inference_{txt}.pt"
-        model_name = os.path.join(self.model_dir, name)
-        self.model = N_net(self.in_dim, self.out_dim, self.backward)
-        self.model.load_state_dict(torch.load(model_name))
-        self.model = self.model.float().to(self.DEVICE)
 
-    def save_model(self):
-        if not os.path.exists(self.model_dir):
-            os.makedirs(self.model_dir)
-        if self.backward:
-            txt = 'inverse'
-        else:
-            txt = 'forward'
-        name = f"NN_inference_{txt}.pt"
-        model_name = os.path.join(self.model_dir, name)
-        torch.save(self.model.state_dict(), model_name)
+    # def load_model(self):
+    #     if self.backward:
+    #         txt = 'inverse'
+    #     else:
+    #         txt = 'forward'
+    #     name = f"NN_inference_{txt}.pt"
+    #     model_name = os.path.join(self.model_dir, name)
+    #     self.model = N_net(self.in_dim, self.out_dim, self.backward)
+    #     self.model.load_state_dict(torch.load(model_name))
+    #     self.model = self.model.float().to(self.DEVICE)
+
+    # def save_model(self):
+    #     if not os.path.exists(self.model_dir):
+    #         os.makedirs(self.model_dir)
+    #     if self.backward:
+    #         txt = 'inverse'
+    #     else:
+    #         txt = 'forward'
+    #     name = f"NN_inference_{txt}.pt"
+    #     model_name = os.path.join(self.model_dir, name)
+    #     torch.save(self.model.state_dict(), model_name)
 
 
 class Inverse_N_net(nn.Module):
@@ -816,7 +799,10 @@ class Inverse_N_net(nn.Module):
         # EDL Layer
         self.EDL_layer = nn.Linear(20, size_out)
 
-    def forward(self, state, n_state, n_action, pred_state):
+    
+
+    def forward(self, state, n_state, n_action, pred_state, mode='centralized'):
+            
         # Infer the number of neighbors dynamically
         num_neighbors = n_state.shape[1]
 
@@ -852,4 +838,5 @@ class Inverse_N_net(nn.Module):
         u = K / torch.sum(alpha, dim=1, keepdim=True)  # uncertainty
 
         return logits, u
+
 

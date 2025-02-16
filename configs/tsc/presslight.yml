@@ -15,5 +15,5 @@ model:
 
 
 trainer:
-  learning_start: 1000
+  learning_start: 1000 # Originally set to 1000
   buffer_size: 5000
