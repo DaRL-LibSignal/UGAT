@@ -11,6 +11,7 @@ import datetime
 from common.stat_utils import log_passing_lane_actinon, write_action_record
 import torch
 import torch.optim as optim
+import random
 
 
 print(torch.cuda.is_available())  # Should return True if CUDA is available
@@ -57,6 +58,7 @@ class TSCTrainer(BaseTrainer):
         self.grounding_pattern = Registry.mapping['trainer_mapping']['setting'].param['grounding_pattern']
         self.ground_original = Registry.mapping['trainer_mapping']['setting'].param['ground_original']
         self.last_n_uncertainties = Registry.mapping['trainer_mapping']['setting'].param['last_n_uncertainties']
+        self.prob_grounding = Registry.mapping['trainer_mapping']['setting'].param['prob_grounding']
 
         self.load_pretrained = Registry.mapping['trainer_mapping']['setting'].param['load_pretrained']
         
@@ -151,35 +153,6 @@ class TSCTrainer(BaseTrainer):
                     
                     self.forward_models.append(self.forward_model)
                     self.inverse_models.append(self.inverse_model)
-
-            # elif self.gattype == "central_fwd_dec_inv":
-            #     self.last_two_central_uncertainties = []
-            #     print(f"\n------- INITIALIZING GAT MODELS CENTRALIZED FWD / DECENTRALIZED INV-------\n")
-            #     gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
-            #     self.forward_model = NN_predictor(self.logger,
-            #                                     (self.agents_real[0].ob_generator.ob_length * num_agents + self.agents_real[0].action_space.n * num_agents),
-            #                                     self.agents_real[0].ob_generator.ob_length * num_agents, self.device, gat_path, 'collected/ereal_train_full.pkl')
-            #     for i in range(num_agents):
-            #         self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * 2,
-            #                                         self.agents_real[0].action_space.n, self.device, gat_path,
-            #                                         'collected/esim_train_full.pkl', backward=True)
-            #         self.inverse_models.append(self.inverse_model)
-
-            # elif self.gattype == "central_inv_dec_fwd":
-            #     self.last_two_central_uncertainties = []
-            #     print(f"\n------- INITIALIZING GAT MODELS CENTRALIZED INV / DECENTRALIZED FWD -------\n")
-            #     gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
-
-            #     for i in range(num_agents):
-            #         self.forward_model = NN_predictor(self.logger,
-            #                                         (self.agents_real[0].ob_generator.ob_length + self.agents_real[0].action_space.n),
-            #                                         self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
-                    
-            #         self.forward_models.append(self.forward_model)
-
-            #     self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length * num_agents * 2,
-            #                                     self.agents_real[0].action_space.n * num_agents, self.device, gat_path,
-            #                                     'collected/esim_train_full.pkl', backward=True)
 
             # Initialize JL-GAT models
             elif self.gattype == "jlgat":
@@ -589,85 +562,6 @@ class TSCTrainer(BaseTrainer):
                                     grounded_actions = actions
                                     grounded_action_count += 1
 
-                        elif self.gattype == "central_fwd_dec_inv":
-                            # Centralized Forward Model
-                            combined_state = np.concatenate([state.flatten() for state in last_obs[:len(self.agents_real)]])
-                            one_hot_actions = np.concatenate([
-                                idx2onehot(np.array([action]), 8).flatten() for action in actions[:len(self.agents_real)]
-                            ])
-                            joint_state_action = np.concatenate([combined_state, one_hot_actions], axis=0)
-                            joint_state_action = torch.from_numpy(joint_state_action).float().to(self.device).unsqueeze(0)
-                        
-                            # Predict the next state using the forward model
-                            pred_next_state = self.forward_model.model(joint_state_action)
-                            
-                            # Split the predicted next state into individual agent states
-                            pred_next_state_split = pred_next_state.view(len(self.agents_sim), -1)  # Shape: (num_agents, state_length_per_agent)
-                            
-                            for idx, ag in enumerate(self.agents_sim):
-                                individual_pred_next_state = pred_next_state_split[idx].unsqueeze(0)  # Get predicted next state for current agent
-                                
-                                individual_state = last_obs[idx].flatten()
-                        
-                                # Prepare input for the inverse model (state + predicted next state)
-                                current_state_tensor = torch.from_numpy(individual_state).float().to(self.device)
-                                inverse_input = torch.cat([current_state_tensor.unsqueeze(0), individual_pred_next_state], dim=1).to(self.device)
-                        
-                                # Use inverse model to compute grounded action and uncertainty
-                                result = self.inverse_models[idx].model(inverse_input)
-                                grounded_action, uncertainty = result[0], result[1]
-                        
-                                if self.uncertainty_setting == True:
-                                    agent_uncertainty_sums[idx] += uncertainty.item()
-                                    if uncertainty < self.avg_agent_uncertainties[idx]:
-                                        actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
-                                        grounded_actions[idx] = actions[idx]
-                                        grounded_action_count += 1
-                                else:
-                                    actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
-                                    grounded_actions[idx] = actions[idx]
-                                    grounded_action_count += 1
-
-                        elif self.gattype == "central_inv_dec_fwd":
-                            # Step 1: Decentralized Forward Model - Predict each agent's next state independently
-                            pred_next_states = []
-                            
-                            for idx, ag in enumerate(self.agents_sim):
-                                individual_state = last_obs[idx].flatten()
-                                individual_action = idx2onehot(np.array([actions[idx]]), 8).flatten()
-                                
-                                state_action = np.concatenate([individual_state, individual_action], axis=0)
-                                state_action = torch.from_numpy(state_action).float().to(self.device).unsqueeze(0)
-                        
-                                # Predict next state using individual agent's forward model
-                                pred_next_state = self.forward_models[idx].model(state_action)
-                                pred_next_states.append(pred_next_state)
-                        
-                            # Step 2: Centralized Inverse Model - Combine all predictions and apply inverse model
-                            joint_pred_next_state = torch.cat(pred_next_states, dim=1)  # Concatenate predictions across agents
-                            combined_state = np.concatenate([state.flatten() for state in last_obs[:len(self.agents_real)]])
-                            
-                            current_state_tensor = torch.from_numpy(combined_state).float().to(self.device).unsqueeze(0)
-                            inverse_input = torch.cat([current_state_tensor, joint_pred_next_state], dim=1).to(self.device)
-
-                            # Get grounded actions and uncertainties
-                            result = self.inverse_model.model(inverse_input)
-                            grounded_action, uncertainty = result[0], result[1]
-                        
-                            # Step 3: Update actions based on uncertainty settings
-                            if self.uncertainty_setting:
-                                uncertainty_sum += uncertainty.item()
-                                if uncertainty < self.mean_uncertainty:
-                                    grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
-                                    actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
-                                    grounded_actions = actions
-                                    grounded_action_count += len(self.agents_sim)
-                            else:
-                                grounded_action_reshaped = grounded_action.view(len(self.agents_sim), 8)
-                                actions = torch.argmax(grounded_action_reshaped, dim=1).cpu().numpy()
-                                grounded_actions = actions
-                                grounded_action_count += len(self.agents_sim)
-
                         # Currently setup for 1x3 only
                         elif self.gattype == "jlgat":
                             
@@ -790,7 +684,18 @@ class TSCTrainer(BaseTrainer):
                                             grounded_action_count += 1
         
                                             ga_by_agent[idx] += 1
-                                    
+
+                                    # If probabilistic grounding flag, determine whether to ground based on that flag setting
+                                    elif self.prob_grounding != 0:
+
+                                        if random.random() < self.prob_grounding:
+
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                    
+                                            grounded_actions[idx] = actions[idx]
+                                            grounded_action_count += 1
+        
+                                            ga_by_agent[idx] += 1
                                                 
                                     # If no flags always ground every action
                                     else:

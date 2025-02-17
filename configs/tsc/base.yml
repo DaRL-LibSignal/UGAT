@@ -38,6 +38,7 @@ trainer:
   ground_original: False
   training_iterations: 1
   last_n_uncertainties: 2
+  prob_grounding: 0
   load_pretrained: True
 
 model:
