@@ -850,7 +850,7 @@ class Dec_Inverse_N_net(nn.Module):
         self.pred_state_encoder = nn.Linear(pred_state_dim[-1], 128)
         
         # Final concatenation: 128 (state) + 128 (pred_state) = 256
-        self.dense_1 = nn.Linear(256, 128)
+        self.dense_1 = nn.Linear(ind_state_dim[0] * 128 + 128, 128)
         self.dense_2 = nn.Linear(128, 128)
         self.dense_3 = nn.Linear(128, 20)
 
@@ -863,7 +863,7 @@ class Dec_Inverse_N_net(nn.Module):
         pred_state_out = F.relu(self.pred_state_encoder(pred_state))
 
         # Concatenate encoded states
-        x = torch.cat((state_out, pred_state_out), dim=-1)
+        x = torch.cat((state_out.view(state_out.shape[0], 1, -1), pred_state_out), dim=-1)
 
         # Forward pass
         x = F.relu(self.dense_1(x))

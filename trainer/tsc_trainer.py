@@ -615,7 +615,11 @@ class TSCTrainer(BaseTrainer):
                                     pred_next_state = self.forward_models[idx].model(relevant_states, actions_).unsqueeze(0)
                             
                                     # Compute inverse model results
-                                    result = self.inverse_models[idx].model(ind_state, neighbor_states, neighbor_actions_tensor, pred_next_state)
+                                    if self.network_version == 2:
+                                        result = self.inverse_models[idx].model(relevant_states, pred_next_state)
+                                    else:
+                                        result = self.inverse_models[idx].model(ind_state, neighbor_states, neighbor_actions_tensor, pred_next_state)
+                                    
                                     grounded_action, uncertainty = result[0], result[1]
 
                                     # Use uncertainty
@@ -692,8 +696,10 @@ class TSCTrainer(BaseTrainer):
                                                 
                                     # If no flags always ground every action
                                     else:
-                                        
-                                        actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                        if self.network_version == 2:
+                                            actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                        else:
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                 
                                         grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
@@ -751,7 +757,12 @@ class TSCTrainer(BaseTrainer):
                                     pred_next_state = self.forward_models[idx].model(relevant_states, actions_).unsqueeze(0)
                             
                                     # Compute inverse model results
-                                    result = self.inverse_models[idx].model(ind_state, relevant_n_states, neighbor_actions_tensor, pred_next_state)
+                                    # Compute inverse model results
+                                    if self.network_version == 2:
+                                        result = self.inverse_models[idx].model(relevant_states, pred_next_state)
+                                    else:
+                                        result = self.inverse_models[idx].model(ind_state, relevant_n_states, neighbor_actions_tensor, pred_next_state)
+                                    
                                     grounded_action, uncertainty = result[0], result[1]
 
                                     # Use uncertainty
@@ -770,9 +781,11 @@ class TSCTrainer(BaseTrainer):
                                                 
                                     # If no flags always ground every action
                                     else:
-                                        
-                                        actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
-                                                
+                                        if self.network_version == 2:
+                                            actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                        else:
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+
                                         grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
 
@@ -1026,9 +1039,13 @@ class TSCTrainer(BaseTrainer):
                         
                         # Exclude the agent's own actions from the list of neighbor actions
                         neighbor_idx = [i for i in neighbors if i != agent]
+
+                        total_idx = [i for i in neighbors]
                         
                         # Collect the joint-local state for the agent and its neighbors
                         joint_local_state = np.concatenate([last_obs[i] for i in neighbor_idx], axis=0)
+
+                        full_local_state = np.concatenate([last_obs[i] for i in total_idx], axis=0)
                         
                         # Collect actions taken by the neighbors (excluding the agent itself)
                         actions_taken_by_neighbors = np.concatenate([actions[i] for i in neighbor_idx], axis=0).reshape(-1, 1)
@@ -1043,8 +1060,10 @@ class TSCTrainer(BaseTrainer):
                         individual_action = actions[agent]
                         
                         # Append the tuple to the list
-                        state_action_next_state.append((agent, individual_state, joint_local_state, actions_taken_by_neighbors, next_state, individual_action))
-                    
+                        if self.network_version == 2:
+                            state_action_next_state.append((agent, full_local_state, individual_action, next_state))
+                        else:
+                            state_action_next_state.append((agent, individual_state, joint_local_state, actions_taken_by_neighbors, next_state, individual_action))
                 else:
                     state_action_next_state.append((last_obs, actions, obs))
                     
