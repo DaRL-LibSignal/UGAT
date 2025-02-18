@@ -639,7 +639,10 @@ class TSCTrainer(BaseTrainer):
 
                                                 if ground_pattern == 0 and (idx == 0 or idx == 2):
                                                     
-                                                    actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                    if self.network_version == 2:
+                                                        actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                                    else:
+                                                        actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                     
                                                     grounded_actions[idx] = actions[idx]
                                                     grounded_action_count += 1
@@ -648,7 +651,10 @@ class TSCTrainer(BaseTrainer):
 
                                                 elif ground_pattern == 1 and idx == 1:
                             
-                                                    actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                    if self.network_version == 2:
+                                                        actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                                    else:
+                                                        actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                         
                                                     grounded_actions[idx] = actions[idx]
                                                     grounded_action_count += 1
@@ -666,7 +672,10 @@ class TSCTrainer(BaseTrainer):
 
                                         if ground_pattern == 0 and (idx == 0 or idx == 2):
                                                     
-                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                            if self.network_version == 2:
+                                                actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                            else:
+                                                actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                     
                                             grounded_actions[idx] = actions[idx]
                                             grounded_action_count += 1
@@ -675,7 +684,10 @@ class TSCTrainer(BaseTrainer):
 
                                         elif ground_pattern == 1 and idx == 1:
                             
-                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                            if self.network_version == 2:
+                                                actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                            else:
+                                                actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                         
                                             grounded_actions[idx] = actions[idx]
                                             grounded_action_count += 1
@@ -687,7 +699,10 @@ class TSCTrainer(BaseTrainer):
 
                                         if random.random() < self.prob_grounding:
 
-                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                            if self.network_version == 2:
+                                                actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                            else:
+                                                actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                     
                                             grounded_actions[idx] = actions[idx]
                                             grounded_action_count += 1
@@ -772,7 +787,10 @@ class TSCTrainer(BaseTrainer):
                                         agent_uncertainty_sums[idx] += uncertainty.item()
                                         if uncertainty < self.avg_agent_uncertainties[idx]:
                         
-                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                            if self.network_version == 2:
+                                                actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                            else:
+                                                actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
                                                 
                                             grounded_actions[idx] = actions[idx]
                                             grounded_action_count += 1
