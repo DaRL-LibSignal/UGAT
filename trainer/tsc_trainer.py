@@ -59,7 +59,9 @@ class TSCTrainer(BaseTrainer):
         self.ground_original = Registry.mapping['trainer_mapping']['setting'].param['ground_original']
         self.last_n_uncertainties = Registry.mapping['trainer_mapping']['setting'].param['last_n_uncertainties']
         self.prob_grounding = Registry.mapping['trainer_mapping']['setting'].param['prob_grounding']
+        self.network_version = Registry.mapping['trainer_mapping']['setting'].param['network_version']
 
+        self.net = Registry.mapping['trainer_mapping']['setting'].param['network']
         self.load_pretrained = Registry.mapping['trainer_mapping']['setting'].param['load_pretrained']
         
         # replay file is only valid in cityflow now. 
@@ -87,8 +89,6 @@ class TSCTrainer(BaseTrainer):
                 Registry.mapping['logger_mapping']['setting'].param['log_dir'],
                 os.path.basename(self.logger.handlers[-1].baseFilename).rstrip('_BRF.log').rstrip('_DTL.log') + '_ACT.log'
             )
-
-        
 
 
         # Path to the folder
@@ -145,11 +145,9 @@ class TSCTrainer(BaseTrainer):
                 # Single state and action for forward model and single states for inverse model input, identical to vanilla GAT
                 for i in range(num_agents):
                     self.forward_model = NN_predictor(self.logger,
-                                                    self.agents_real[0].ob_generator.ob_length, self.agents_real[0].action_space.n,
+                                                    (1, self.agents_real[0].ob_generator.ob_length), (1, self.agents_real[0].action_space.n),
                                                     self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
-                    self.inverse_model = UNCERTAINTY_predictor(self.logger, self.agents_real[0].ob_generator.ob_length,
-                                                    self.agents_real[0].action_space.n, self.device, gat_path,
-                                                    'collected/esim_train_full.pkl', backward=True)
+                    self.inverse_model = UNCERTAINTY_predictor(self.logger, (1, self.agents_real[0].ob_generator.ob_length), 0, 0, (1, self.agents_real[0].ob_generator.ob_length), self.agents_real[0].action_space.n, self.device, gat_path, 'collected/esim_train_full.pkl', backward=True, history=1, mode='dec')
                     
                     self.forward_models.append(self.forward_model)
                     self.inverse_models.append(self.inverse_model)
@@ -159,8 +157,6 @@ class TSCTrainer(BaseTrainer):
                 print(f"\n------- INITIALIZING JL-GAT MODELS -------\n")
                 gat_path = os.path.join(Registry.mapping['logger_mapping']['path'].path, 'model')
                 
-                self.net = Registry.mapping['trainer_mapping']['setting'].param['network']
-
                 # Hardcoded values for # of neighbors for each agent until I fix later
                 if self.net == "cityflow1x3":
                     self.agents_real[0].neighbors = 2
@@ -199,13 +195,16 @@ class TSCTrainer(BaseTrainer):
                     # Forward model outputs a single predicted next state based on joint local information
                     # Initialized with the following dimensions: Joint local State: (Agent + Neighbors, State size), Joint local action: (Agent + Neighbors, Action size)
                     self.forward_model = NN_predictor(self.logger,
-                                                    (ag.neighbors, self.agents_real[0].ob_generator.ob_length), (ag.neighbors, self.agents_real[0].action_space.n),
-                                                    self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
+                                                (ag.neighbors, self.agents_real[0].ob_generator.ob_length), (ag.neighbors, self.agents_real[0].action_space.n),
+                                                self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
 
                     # Inverse model outputs a single predicted action based on joint local information (also added actions of neighbors to inverse model, assuming they're fixed)
-                    self.inverse_model = UNCERTAINTY_predictor(self.logger, (1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors - 1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors - 1, self.agents_real[0].action_space.n), (1, self.agents_real[0].ob_generator.ob_length),
-                                                    self.agents_real[0].action_space.n, self.device, gat_path,
-                                                    'collected/esim_train_full.pkl', backward=True)
+                    if self.network_version == 2:
+                        self.inverse_model = UNCERTAINTY_predictor(self.logger, (ag.neighbors, self.agents_real[0].ob_generator.ob_length), 0, 0, (ag.neighbors, self.agents_real[0].ob_generator.ob_length), self.agents_real[0].action_space.n, self.device, gat_path, 'collected/esim_train_full.pkl', backward=True, history=1, mode='wo_action')
+                    else:
+                        self.inverse_model = UNCERTAINTY_predictor(self.logger, (1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors - 1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors - 1, self.agents_real[0].action_space.n), (1, self.agents_real[0].ob_generator.ob_length),
+                                                        self.agents_real[0].action_space.n, self.device, gat_path,
+                                                        'collected/esim_train_full.pkl', backward=True)
                     
                     self.forward_models.append(self.forward_model)
                     self.inverse_models.append(self.inverse_model)
@@ -324,24 +323,13 @@ class TSCTrainer(BaseTrainer):
 
             if self.load_pretrained:
                 for ag in self.agents_sim:
-                    ag.load_model(0, True)
+                    ag.load_model(0, True, self.net)
                     ag.optimizer = optim.RMSprop(ag.model.parameters(),
                                        lr=ag.learning_rate,
                                        alpha=0.9, centered=False, eps=1e-7)
-
-                # for ag in self.agents_real:
-                #     ag.load_model(0, True)
             
             # Run for a set number of episodes
             for e in range(self.episodes):
-
-                # for ag in self.agents_real:
-                #     print(f"Agent X params")
-                #     for param in ag.model.parameters():
-                #         print(param.mean().item())  # Print mean of parameters to check changes
-
-                #     for name, param in ag.model.named_parameters():
-                #         print(name, param.requires_grad)
         
                 # Sim rollout + collect data
                 self.sim_rollout(e, self.gattype)
@@ -539,28 +527,33 @@ class TSCTrainer(BaseTrainer):
     
                         elif self.gattype == "decentralized":
                             for idx, ag in enumerate(self.agents_sim):
-                                individual_state = last_obs[idx].flatten()
-                                individual_action = idx2onehot(np.array([actions[idx]]), 8).flatten()
-                                state_action = np.concatenate([individual_state, individual_action], axis=0)
-                                state_action = torch.from_numpy(state_action).float().to(self.device).unsqueeze(0)
+                                individual_state = last_obs[idx]
+                                individual_action = idx2onehot(np.array([actions[idx]]), 8)
+
+                                
+                                individual_state = torch.from_numpy(individual_state).float().to(self.device).unsqueeze(0)
+                                individual_action = torch.from_numpy(individual_action).float().to(self.device).unsqueeze(0)
+                                
+                                pred_next_state = self.forward_models[idx].model(individual_state, individual_action).unsqueeze(0)
     
-                                pred_next_state = self.forward_models[idx].model(state_action)
-                                current_state_tensor = torch.from_numpy(individual_state).float().to(self.device)
-                                inverse_input = torch.cat([current_state_tensor.unsqueeze(0), pred_next_state], dim=1).to(self.device)
-    
-                                result = self.inverse_models[idx].model(inverse_input)
+                                result = self.inverse_models[idx].model(individual_state, pred_next_state)
+                                
                                 grounded_action, uncertainty = result[0], result[1]
 
                                 if self.uncertainty_setting == True:
                                     agent_uncertainty_sums[idx] += uncertainty.item()
                                     if uncertainty < self.avg_agent_uncertainties[idx]:
                                         actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                        
                                         grounded_actions[idx] = actions[idx]
                                         grounded_action_count += 1
+                                        ga_by_agent[idx] += 1
                                 else:
                                     actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
-                                    grounded_actions = actions
+                                    
+                                    grounded_actions[idx] = actions[idx]
                                     grounded_action_count += 1
+                                    ga_by_agent[idx] += 1
 
                         # Currently setup for 1x3 only
                         elif self.gattype == "jlgat":
@@ -913,44 +906,6 @@ class TSCTrainer(BaseTrainer):
     
                         # Train the decentralized inverse model
                         self.inverse_models[idx].train(100, 'inverse', idx, 5000, "decentralized")
-
-                elif self.gattype == "central_fwd_dec_inv":
-                    # Load and split the real and sim data to prepare for forward / inverse model training
-
-                    # Forward data split using real data
-                    load_and_split_forward_data("collected/ereal_train.pkl", "collected/ereal_train_full.pkl", "collected/ereal_test_full.pkl",
-                                       8, 0.2, 42, "centralized", len(self.agents_real))
-
-                    # Inverse data split using sim data
-                    load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
-                                       8, 0.2, 42, "decentralized", len(self.agents_sim))
-
-                    # Train the centralized forward model
-                    self.forward_model.train(100, 'forward', len(self.agents_real), 5000 * len(self.agents_real))
-
-                    for idx, ag in enumerate(self.agents_sim):
-    
-                        # Train the decentralized inverse model
-                        self.inverse_models[idx].train(100, 'inverse', idx, 5000, "decentralized")
-
-                elif self.gattype == "central_inv_dec_fwd":
-                    # Load and split the real and sim data to prepare for forward / inverse model training
-
-                    # Forward data split using real data
-                    load_and_split_forward_data("collected/ereal_train.pkl", "collected/ereal_train_full", "collected/ereal_test_full",
-                                       8, 0.2, 42, "decentralized", len(self.agents_real))
-
-                    # Inverse data split using sim data
-                    load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full.pkl", "collected/esim_test_full.pkl",
-                                       8, 0.2, 42, "centralized", len(self.agents_sim))
-
-                    # Train the centralized inverse model
-                    self.inverse_model.train(100, 'inverse', len(self.agents_sim), 5000 * len(self.agents_real))
-
-                    for idx, ag in enumerate(self.agents_sim):
-    
-                        # Train the decentralized forward model
-                        self.forward_models[idx].train(100, 'forward', idx, 5000, "decentralized")
                         
 
                 elif self.gattype == "jlgat":
@@ -961,8 +916,12 @@ class TSCTrainer(BaseTrainer):
                                        8, 0.2, 42, "jlgat", len(self.agents_real))
 
                     # Inverse data split using sim data
-                    load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
-                                       8, 0.2, 42, "jlgat", len(self.agents_sim))
+                    if self.network_version == 2:
+                        load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
+                                           8, 0.2, 42, "decentralized", len(self.agents_sim))
+                    else:
+                        load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
+                                           8, 0.2, 42, "jlgat", len(self.agents_sim))
 
                     for idx, ag in enumerate(self.agents_sim):
                         
@@ -970,7 +929,7 @@ class TSCTrainer(BaseTrainer):
                         self.forward_models[idx].train(100, 'forward', idx, 5000, "jlgat")
     
                         # Train the decentralized inverse model
-                        self.inverse_models[idx].train(100, 'inverse', idx, 5000, "jlgat")
+                        self.inverse_models[idx].train(100, 'inverse', idx, 5000, "jlgat", self.network_version)
                     
     
     def sim_rollout(self, e, mode="centralized"):
@@ -1030,10 +989,17 @@ class TSCTrainer(BaseTrainer):
 
                 # Data format is (Individual state, Joint-local state for neighbors, actions taken by neighbors, next individual state, individual action to cause transition)
                 elif mode == "jlgat" and self.net == "cityflow1x3":
-                    # Joint local information storage for cityflow1x3 network
-                    state_action_next_state.append((0, last_obs[0], last_obs[1], actions[1].reshape(-1, 1), obs[0],  actions[0].reshape(-1, 1)))
-                    state_action_next_state.append((1, last_obs[1], np.concatenate([last_obs[0], last_obs[2]], axis=0), np.concatenate([actions[0], actions[2]], axis=0).reshape(-1, 1), obs[1], actions[1].reshape(-1, 1)))
-                    state_action_next_state.append((2, last_obs[2], last_obs[1], actions[1].reshape(-1, 1), obs[2],  actions[2].reshape(-1, 1)))
+
+                    if self.network_version == 2:
+                        # Joint local information storage for cityflow1x3 network
+                        state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=0), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), obs[0], actions[0].reshape(-1, 1)))
+                        state_action_next_state.append((1, np.concatenate([last_obs[0], last_obs[1], last_obs[2]], axis=0), np.concatenate([actions[0], actions[1], actions[2]], axis=0).reshape(-1, 1), obs[1], actions[1].reshape(-1, 1)))
+                        state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=0), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), obs[2], actions[2].reshape(-1, 1)))
+                    else:
+                        # Joint local information storage for cityflow1x3 network
+                        state_action_next_state.append((0, last_obs[0], last_obs[1], actions[1].reshape(-1, 1), obs[0],  actions[0].reshape(-1, 1)))
+                        state_action_next_state.append((1, last_obs[1], np.concatenate([last_obs[0], last_obs[2]], axis=0), np.concatenate([actions[0], actions[2]], axis=0).reshape(-1, 1), obs[1], actions[1].reshape(-1, 1)))
+                        state_action_next_state.append((2, last_obs[2], last_obs[1], actions[1].reshape(-1, 1), obs[2],  actions[2].reshape(-1, 1)))
 
                 # Data format is (Joint-local state, actions taken by neighbors, next individual state, individual action to cause transition)
                 elif mode == "jlgat" and self.net == "cityflow4x4":
@@ -1132,9 +1098,9 @@ class TSCTrainer(BaseTrainer):
                 self.metric_real.update(rewards)
 
                 if mode == "decentralized" or mode == "central_inv_dec_fwd":
-                    # Collect state-action-next_state and agent index for saving
-                    for idx, (obs_agent, action_agent) in enumerate(zip(last_obs, actions)):
-                        state_action_next_state.append((idx, obs_agent, action_agent, obs[idx]))
+                    # Store the transition (agent_index, state, action, next_state) for each agent
+                    for idx, (state, action, next_state) in enumerate(zip(last_obs, actions, obs)):
+                        state_action_next_state.append((idx, state, action, next_state))
 
                 # Joint Local state, Joint Local action, Individual next state
                 elif mode == "jlgat" and self.net == "cityflow1x3":

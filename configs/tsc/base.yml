@@ -31,7 +31,7 @@ trainer:
   update_target_rate: 10
   test_when_train: True
   gat: True
-  gattype: "jlgat"
+  gattype: "decentralized"
   uncertainty: False
   delayedgat: False
   grounding_pattern: False
@@ -39,6 +39,7 @@ trainer:
   training_iterations: 1
   last_n_uncertainties: 2
   prob_grounding: 0
+  network_version: 0 # 2 for network version 2, any other number for network version 1
   load_pretrained: True
 
 model:

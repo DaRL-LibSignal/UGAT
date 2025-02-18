@@ -263,20 +263,14 @@ class PressLightAgent(RLAgent):
         weights = self.model.state_dict()
         self.target_model.load_state_dict(weights)
 
-    def load_model(self, e, pretrained=False):
-        '''
-        load_model
-        Load model params of an episode.
-
-        :param e: specified episode
-        :return: None
-        '''
+    def load_model(self, e, pretrained=False, network="cityflow1x3"):
         if pretrained:
             project_dir = os.getcwd()  # Get current project directory
-            pretrained_dir = os.path.join(project_dir, "pretrained")
+            network_dir = "1x3" if network == "cityflow1x3" else "4x4"
+            pretrained_dir = os.path.join(project_dir, "pretrained", network_dir)
         
             if not os.path.exists(pretrained_dir):
-                raise FileNotFoundError(f"Pretrained directory not found in {project_dir}")
+                raise FileNotFoundError(f"Pretrained directory {network_dir} not found in {project_dir}/pretrained")
         
             # Iterate over files in the directory
             matching_file = None
