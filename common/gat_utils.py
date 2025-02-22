@@ -569,8 +569,8 @@ class Central_N_net(nn.Module):
         # Fully connected layers after aggregation
         self.dense_2 = nn.Linear(state_dim[0] * 128, 128)
         self.dense_3 = nn.Linear(128, 128)
-        self.dense_4 = nn.Linear(128, 120)
-        self.dense_5 = nn.Linear(40, size_out)
+        self.dense_4 = nn.Linear(128, 192)
+        self.dense_5 = nn.Linear(int(192 / state_dim[0]), size_out)
 
     def forward(self, state, action):
         
@@ -950,8 +950,8 @@ class Central_Inverse_N_net(nn.Module):
         # Final concatenation: 128 (state) + 128 (pred_state) = 256
         self.dense_1 = nn.Linear(ind_state_dim[0] * 128, 128)
         self.dense_2 = nn.Linear(128, 128)
-        self.dense_3 = nn.Linear(128, 120)
-        self.dense_4 = nn.Linear(40, 20)
+        self.dense_3 = nn.Linear(128, 192)
+        self.dense_4 = nn.Linear(int(192 / ind_state_dim[0]), 20)
 
         # EDL Layer
         self.EDL_layer = nn.Linear(20, size_out)
