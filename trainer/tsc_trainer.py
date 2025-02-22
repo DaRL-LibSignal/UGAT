@@ -799,6 +799,45 @@ class TSCTrainer(BaseTrainer):
                                             grounded_action_count += 1
 
                                             ga_by_agent[idx] += 1
+
+                                    
+                                    # Use grounding pattern without uncertainty
+                                    elif self.grounding_pattern:
+
+                                        if episode % 2 == 0:
+                                            ground_pattern = 0
+                                        else:
+                                            ground_pattern = 1
+
+                                        if ground_pattern == 0 and idx in {0, 2, 5, 7, 8, 10, 13, 15}:
+                                            
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                    
+                                            grounded_actions[idx] = actions[idx]
+                                            grounded_action_count += 1
+            
+                                            ga_by_agent[idx] += 1
+
+                                        elif ground_pattern == 1 and idx in {1, 3, 4, 6, 9, 11, 12, 14}:
+                            
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                        
+                                            grounded_actions[idx] = actions[idx]
+                                            grounded_action_count += 1
+        
+                                            ga_by_agent[idx] += 1
+
+                                    # If probabilistic grounding flag, determine whether to ground based on that flag setting
+                                    elif self.prob_grounding != 0:
+
+                                        if random.random() < self.prob_grounding:
+                                            
+                                            actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                    
+                                            grounded_actions[idx] = actions[idx]
+                                            grounded_action_count += 1
+        
+                                            ga_by_agent[idx] += 1
                                                 
                                     # If no flags always ground every action
                                     else:
