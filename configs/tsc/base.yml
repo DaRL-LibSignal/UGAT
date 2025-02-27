@@ -32,7 +32,7 @@ trainer:
   test_when_train: True
   gat: True
   gattype: "jlgat"
-  uncertainty: True
+  uncertainty: False
   delayedgat: False
   grounding_pattern: False
   ground_original: False
