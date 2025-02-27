@@ -193,13 +193,24 @@ class TSCTrainer(BaseTrainer):
 
                     # Forward model outputs a single predicted next state based on joint local information
                     # Initialized with the following dimensions: Joint local State: (Agent + Neighbors, State size), Joint local action: (Agent + Neighbors, Action size)
-                    self.forward_model = NN_predictor(self.logger,
+                    if self.network_version == 4:
+                        self.forward_model = NN_predictor(self.logger,
+                                                (ag.neighbors, self.agents_real[0].ob_generator.ob_length), (1, self.agents_real[0].action_space.n),
+                                                self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl', backward=False, history=1, mode='jlgat4')
+                    elif self.network_version == 5:
+                        self.forward_model = NN_predictor(self.logger,
+                                                (1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors, self.agents_real[0].action_space.n),
+                                                self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl', backward=False, history=1, mode='jlgat5')
+                    else:
+                        self.forward_model = NN_predictor(self.logger,
                                                 (ag.neighbors, self.agents_real[0].ob_generator.ob_length), (ag.neighbors, self.agents_real[0].action_space.n),
                                                 self.agents_real[0].ob_generator.ob_length, self.device, gat_path, 'collected/ereal_train_full.pkl')
 
                     # Inverse model outputs a single predicted action based on joint local information (also added actions of neighbors to inverse model, assuming they're fixed)
                     if self.network_version == 2:
-                        self.inverse_model = UNCERTAINTY_predictor(self.logger, (ag.neighbors, self.agents_real[0].ob_generator.ob_length), 0, 0, (ag.neighbors, self.agents_real[0].ob_generator.ob_length), self.agents_real[0].action_space.n, self.device, gat_path, 'collected/esim_train_full.pkl', backward=True, history=1, mode='wo_action')
+                        self.inverse_model = UNCERTAINTY_predictor(self.logger, (ag.neighbors, self.agents_real[0].ob_generator.ob_length), 0, 0, (1, self.agents_real[0].ob_generator.ob_length), self.agents_real[0].action_space.n, self.device, gat_path, 'collected/esim_train_full.pkl', backward=True, history=1, mode='wo_action')
+                    elif self.network_version == 3:
+                        self.inverse_model = UNCERTAINTY_predictor(self.logger, (1, self.agents_real[0].ob_generator.ob_length), 0, (ag.neighbors - 1, self.agents_real[0].action_space.n), (1, self.agents_real[0].ob_generator.ob_length), self.agents_real[0].action_space.n, self.device, gat_path, 'collected/esim_train_full.pkl', backward=True, history=1, mode='wo_state')
                     else:
                         self.inverse_model = UNCERTAINTY_predictor(self.logger, (1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors - 1, self.agents_real[0].ob_generator.ob_length), (ag.neighbors - 1, self.agents_real[0].action_space.n), (1, self.agents_real[0].ob_generator.ob_length),
                                                         self.agents_real[0].action_space.n, self.device, gat_path,
@@ -573,6 +584,8 @@ class TSCTrainer(BaseTrainer):
                                         idx2onehot(np.array([actions[1]]), 8)
                                         ])
 
+                                        ind_action = idx2onehot(np.array([actions[0]]), 8)
+
                                         ind_state = last_obs[0]
                                         neighbor_states = last_obs[1]
                                         
@@ -589,6 +602,8 @@ class TSCTrainer(BaseTrainer):
                                         ind_state = last_obs[1]
                                         neighbor_states = np.concatenate([last_obs[0], last_obs[2]])
 
+                                        ind_action = idx2onehot(np.array([actions[1]]), 8)
+
                                         neighbor_actions = np.concatenate([
                                         idx2onehot(np.array([actions[0].cpu().numpy()]) if isinstance(actions[0], torch.Tensor) else np.array([actions[0]]), 8),
                                         idx2onehot(np.array([actions[2].cpu().numpy()]) if isinstance(actions[2], torch.Tensor) else np.array([actions[2]]), 8)
@@ -603,6 +618,8 @@ class TSCTrainer(BaseTrainer):
 
                                         ind_state = last_obs[2]
                                         neighbor_states = last_obs[1]
+
+                                        ind_action = idx2onehot(np.array([actions[2]]), 8)
                                         
                                         neighbor_actions = idx2onehot(np.array([actions[1]]), 8)
 
@@ -610,16 +627,24 @@ class TSCTrainer(BaseTrainer):
                                     # Create tensors for use in input
                                     relevant_states = torch.from_numpy(relevant_states).float().to(self.device).unsqueeze(0)
                                     ind_state = torch.from_numpy(ind_state).float().to(self.device).unsqueeze(0)
+                                    ind_action = torch.from_numpy(ind_action).float().to(self.device).unsqueeze(0)
                                     neighbor_states = torch.from_numpy(neighbor_states).float().to(self.device).unsqueeze(0)
                                     actions_ = torch.from_numpy(relevant_actions).float().to(self.device).unsqueeze(0)
                                     neighbor_actions_tensor = torch.from_numpy(neighbor_actions).float().to(self.device).unsqueeze(0)
 
                                     # Predict next state
-                                    pred_next_state = self.forward_models[idx].model(relevant_states, actions_).unsqueeze(0)
+                                    if self.network_version == 4:
+                                        pred_next_state = self.forward_models[idx].model(relevant_states, ind_action)
+                                    elif self.network_version == 5:
+                                        pred_next_state = self.forward_models[idx].model(ind_state, actions_)
+                                    else:
+                                        pred_next_state = self.forward_models[idx].model(relevant_states, actions_).unsqueeze(0)
                             
                                     # Compute inverse model results
                                     if self.network_version == 2:
                                         result = self.inverse_models[idx].model(relevant_states, pred_next_state)
+                                    elif self.network_version == 3:
+                                        result = self.inverse_models[idx].model(ind_state, neighbor_actions_tensor, pred_next_state)
                                     else:
                                         result = self.inverse_models[idx].model(ind_state, neighbor_states, neighbor_actions_tensor, pred_next_state)
                                     
@@ -714,7 +739,7 @@ class TSCTrainer(BaseTrainer):
                                                 
                                     # If no flags always ground every action
                                     else:
-                                        if self.network_version == 2:
+                                        if self.network_version == 2 or self.network_version == 3:
                                             actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
                                         else:
                                             actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
@@ -987,22 +1012,25 @@ class TSCTrainer(BaseTrainer):
 
                     # Forward data split using real data
                     load_and_split_forward_data("collected/ereal_train.pkl", "collected/ereal_train_full", "collected/ereal_test_full",
-                                       8, 0.2, 42, "jlgat", len(self.agents_real))
+                                    8, 0.2, 42, "jlgat", len(self.agents_real))
 
                     # Inverse data split using sim data
                     if self.network_version == 2:
                         load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
                                            8, 0.2, 42, "decentralized", len(self.agents_sim))
+                    elif self.network_version == 3:
+                        load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
+                                           8, 0.2, 42, "jlgat3", len(self.agents_sim))
                     else:
                         load_and_split_inverse_data("collected/esim_train.pkl", "collected/esim_train_full", "collected/esim_test_full",
                                            8, 0.2, 42, "jlgat", len(self.agents_sim))
 
                     for idx, ag in enumerate(self.agents_sim):
                         
-                        # Train the decentralized forward model
-                        self.forward_models[idx].train(100, 'forward', idx, 5000, "jlgat")
+                        # Train the JLGAT forward model
+                        self.forward_models[idx].train(100, 'forward', idx, 5000, "jlgat", self.network_version)
     
-                        # Train the decentralized inverse model
+                        # Train the JLGAT inverse model
                         self.inverse_models[idx].train(100, 'inverse', idx, 5000, "jlgat", self.network_version)
                     
     
@@ -1066,9 +1094,14 @@ class TSCTrainer(BaseTrainer):
 
                     if self.network_version == 2:
                         # Joint local information storage for cityflow1x3 network
-                        state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=0), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), obs[0], actions[0].reshape(-1, 1)))
-                        state_action_next_state.append((1, np.concatenate([last_obs[0], last_obs[1], last_obs[2]], axis=0), np.concatenate([actions[0], actions[1], actions[2]], axis=0).reshape(-1, 1), obs[1], actions[1].reshape(-1, 1)))
-                        state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=0), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), obs[2], actions[2].reshape(-1, 1)))
+                        state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=0), actions[0].reshape(-1, 1), obs[0], actions[0].reshape(-1, 1)))
+                        state_action_next_state.append((1, np.concatenate([last_obs[0], last_obs[1], last_obs[2]], axis=0), actions[1].reshape(-1, 1), obs[1], actions[1].reshape(-1, 1)))
+                        state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=0), actions[2].reshape(-1, 1), obs[2], actions[2].reshape(-1, 1)))
+                    elif self.network_version == 3:
+                        # Joint local information storage for cityflow1x3 network
+                        state_action_next_state.append((0, last_obs[0], actions[1].reshape(-1, 1), obs[0], actions[0].reshape(-1, 1)))
+                        state_action_next_state.append((1, last_obs[2], np.concatenate([actions[0], actions[2]], axis=0).reshape(-1, 1), obs[1], actions[1].reshape(-1, 1)))
+                        state_action_next_state.append((2, last_obs[2], actions[2].reshape(-1, 1).reshape(-1, 1), obs[2], actions[2].reshape(-1, 1)))
                     else:
                         # Joint local information storage for cityflow1x3 network
                         state_action_next_state.append((0, last_obs[0], last_obs[1], actions[1].reshape(-1, 1), obs[0],  actions[0].reshape(-1, 1)))
@@ -1184,10 +1217,24 @@ class TSCTrainer(BaseTrainer):
 
                 # Joint Local state, Joint Local action, Individual next state
                 elif mode == "jlgat" and self.net == "cityflow1x3":
-                    # Joint local information storage for cityflow1x3 network
-                    state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=0), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), obs[0]))
-                    state_action_next_state.append((1, np.array(last_obs).squeeze(axis=1), actions.reshape(-1, 1), obs[1]))
-                    state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=0), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), obs[2]))
+
+                    # Ablation without neighbor action info in forward
+                    if self.network_version == 4:
+                        # Joint local information storage for cityflow1x3 network
+                        state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=0), actions[0].reshape(-1, 1), obs[0]))
+                        state_action_next_state.append((1, np.array(last_obs).squeeze(axis=1), actions[1].reshape(-1, 1), obs[1]))
+                        state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=0), actions[2].reshape(-1, 1), obs[2]))
+                    # Ablation without neighbor state info in forward
+                    elif self.network_version == 5:
+                        # Joint local information storage for cityflow1x3 network
+                        state_action_next_state.append((0, last_obs[0], np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), obs[0]))
+                        state_action_next_state.append((1, last_obs[1], np.concatenate([actions[0], actions[1], actions[2]], axis=0).reshape(-1, 1), obs[1]))
+                        state_action_next_state.append((2, last_obs[2], np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), obs[2]))
+                    else:
+                        # Joint local information storage for cityflow1x3 network
+                        state_action_next_state.append((0, np.concatenate([last_obs[0], last_obs[1]], axis=0), np.concatenate([actions[0], actions[1]], axis=0).reshape(-1, 1), obs[0]))
+                        state_action_next_state.append((1, np.array(last_obs).squeeze(axis=1), actions.reshape(-1, 1), obs[1]))
+                        state_action_next_state.append((2, np.concatenate([last_obs[1], last_obs[2]], axis=0), np.concatenate([actions[1], actions[2]], axis=0).reshape(-1, 1), obs[2]))
 
                 elif mode == "jlgat" and self.net == "cityflow4x4":
                     # Joint local information storage for cityflow4x4 network

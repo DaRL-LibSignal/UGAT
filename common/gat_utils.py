@@ -80,7 +80,7 @@ def load_and_split_forward_data(
             save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
             save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
 
-
+    
     elif mode == "centralized":
         agent_data = []
         
@@ -143,7 +143,6 @@ def load_and_split_inverse_data(pkl_file_path, train_pkl_file, test_pkl_file, sp
         # Now, split and save data for each agent
         for agent_idx, agent_records in agent_data.items():
             
-            
             # Separate state, action, and next state
             states = torch.stack([rec[0] for rec in agent_records])
             next_states = torch.stack([rec[2] for rec in agent_records])
@@ -157,6 +156,52 @@ def load_and_split_inverse_data(pkl_file_path, train_pkl_file, test_pkl_file, sp
             # Prepare the train and test datasets (keeping state and action separate)
             train_data = [(states_train[i], next_states_train[i], targets_train[i]) for i in range(len(states_train))]
             test_data = [(states_test[i], next_states_test[i], targets_test[i]) for i in range(len(states_test))]
+    
+            # Save the data for each agent to separate files
+            save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
+            save_data_to_pkl(test_data, f"{test_pkl_file}_agent_{agent_idx}.pkl")
+
+    elif mode == "jlgat3":
+        agent_data = {agent_idx: [] for agent_idx in range(num_agents)}
+
+        # Data comes in as (agent idx, individual state, joint neighbor states, joint neighbor actions, next individual state, individual action taken)
+        for record in data:
+            agent_idx = record[0]
+            states = record[1]
+            n_actions = record[2]
+            next_states = record[3]
+            ind_action = record[4]
+
+            for state, action, next_state, i_action in zip(states, n_actions, next_states, ind_action):
+                
+                one_hot_actions = torch.tensor(
+                np.concatenate([idx2onehot(np.array([action]), spices) for action in n_actions], axis=0),
+                dtype=torch.float32
+            )
+            
+            agent_data[agent_idx].append((
+                    torch.tensor(states, dtype=torch.float32),
+                    one_hot_actions,
+                    torch.tensor(next_states, dtype=torch.float32),
+                    torch.tensor(i_action, dtype=torch.long)
+                ))
+    
+        # Now, split and save data for each agent
+        for agent_idx, agent_records in agent_data.items():
+            # Separate state, action, and next state
+            states = torch.stack([rec[0] for rec in agent_records])
+            n_actions = torch.stack([rec[1] for rec in agent_records])
+            next_states = torch.stack([rec[2] for rec in agent_records])
+            targets = torch.stack([rec[3] for rec in agent_records])
+            
+            # Split the data into train and test sets
+            states_train, states_test, n_actions_train, n_actions_test, next_states_train, next_states_test, targets_train, targets_test = train_test_split(
+                states.numpy(), n_actions.numpy(), next_states.numpy(), targets, test_size=test_size, random_state=random_seed
+            )
+    
+            # Prepare the train and test datasets (keeping state and action separate)
+            train_data = [(states_train[i], n_actions_train[i], next_states_train[i], targets_train[i]) for i in range(len(states_train))]
+            test_data = [(states_test[i], n_actions_test[i], next_states_test[i], targets_test[i]) for i in range(len(states_test))]
     
             # Save the data for each agent to separate files
             save_data_to_pkl(train_data, f"{train_pkl_file}_agent_{agent_idx}.pkl")
@@ -288,6 +333,10 @@ class NN_predictor(object):
     def make_model(self):
         if self.mode == 'central':
             self.model = Central_N_net(self.state_dim, self.action_dim, self.out_dim, self.backward).float()
+        elif self.mode == "jlgat4":
+            self.model = N_net_noAction(self.state_dim, self.action_dim, self.out_dim, self.backward).float()
+        elif self.mode == "jlgat5":
+            self.model = N_net_noState(self.state_dim, self.action_dim, self.out_dim, self.backward).float()
         else:
             self.model = N_net(self.state_dim, self.action_dim, self.out_dim, self.backward).float()
 
@@ -313,7 +362,7 @@ class NN_predictor(object):
         model_name = os.path.join(self.model_dir, name)
         torch.save(self.model.state_dict(), model_name)
     
-    def train(self, epochs, sign, agent_num=None, max_samples=5000, mode="centralized"):
+    def train(self, epochs, sign, agent_num=None, max_samples=5000, mode="centralized", jlnet=0):
         """
         Train the model on real data compatible with the data formatting of the forward split function.
         """
@@ -372,6 +421,10 @@ class NN_predictor(object):
                 if mode == "centralized":
                     # Compute the loss
                     loss = self.criterion(y_pred, y_true)
+                elif mode == "jlgat" and jlnet == 4:
+                    loss = self.criterion(y_pred.squeeze(1), y_true.squeeze(1))
+                elif mode == "jlgat" and jlnet == 5:
+                    loss = self.criterion(y_pred.squeeze(1), y_true.squeeze(1))
                 elif mode == "jlgat":
                     # Compute the loss
                     loss = self.criterion(y_pred, y_true.squeeze(1))
@@ -394,7 +447,7 @@ class NN_predictor(object):
                 if self.backward:
                     test_loss = self.testest_inverset(e, txt, agent_num, mode)
                 else:
-                    test_loss = self.test(e, txt, agent_num, mode)
+                    test_loss = self.test(e, txt, agent_num, mode, jlnet)
     
             # Reset train loss for the next epoch
             train_loss = 0.0
@@ -408,7 +461,7 @@ class NN_predictor(object):
 
 
 
-    def test(self, e, txt, agent_num=None, mode="centralized"):
+    def test(self, e, txt, agent_num=None, mode="centralized", jlnet=0):
         test_loss = 0.0
     
         # Load the validation dataset corresponding to the specified agent_num
@@ -440,6 +493,20 @@ class NN_predictor(object):
 
                     # Compute the loss
                     loss = self.criterion(y_pred, y_true)
+
+                elif mode == "jlgat" and jlnet == 4:
+                    # Forward pass with separate inputs
+                    y_pred = self.model(state, action)
+                    
+                    # Compute the loss
+                    loss = self.criterion(y_pred.squeeze(1), y_true.squeeze(1))
+
+                elif mode == "jlgat" and jlnet == 5:
+                    # Forward pass with separate inputs
+                    y_pred = self.model(state, action)
+                    
+                    # Compute the loss
+                    loss = self.criterion(y_pred.squeeze(1), y_true.squeeze(1))
 
                 elif mode == "jlgat":
                     # Forward pass with separate inputs
@@ -490,6 +557,16 @@ class PKLDataset(Dataset):
                 torch.tensor(pred_state, dtype=torch.float32),
                 torch.tensor(targets, dtype=torch.float32)
             )
+
+        elif self.flag == 'jlg3':
+            states, n_actions, pred_state, targets = self.data[idx]
+            return (
+                torch.tensor(states, dtype=torch.float32),
+                torch.tensor(n_actions, dtype=torch.float32),
+                torch.tensor(pred_state, dtype=torch.float32),
+                targets
+            )
+        
         elif self.flag == 'central':
             states, next_states, targets = self.data[idx]
             return (
@@ -544,6 +621,82 @@ class N_net(nn.Module):
         
         # Flatten across agents
         x = x.view(batch_size, -1)  # (batch, num_agents * 128)
+        
+        # Fully connected layers
+        x = F.relu(self.dense_2(x))
+        x = F.relu(self.dense_3(x))
+        x = F.relu(self.dense_4(x))
+        x = self.dense_5(x)
+        
+        return x
+
+
+
+class N_net_noAction(nn.Module):
+    def __init__(self, state_dim, action_dim, size_out, backward):
+        super(N_net_noAction, self).__init__()
+        self.backward = backward
+        
+        # Separate input layers per agent
+        self.state_fc = nn.Linear(state_dim[-1], 64)  # Encode state
+        self.action_fc = nn.Linear(action_dim[-1], 64)  # Encode action
+        
+        # Fully connected layers after aggregation
+        self.dense_2 = nn.Linear(state_dim[0] * 64 + 64, 128)
+        self.dense_3 = nn.Linear(128, 128)
+        self.dense_4 = nn.Linear(128, 20)
+        self.dense_5 = nn.Linear(20, size_out)
+
+    def forward(self, state, action):
+        
+        # state, action shape: (batch, num_agents, state_dim/action_dim)
+        batch_size, num_agents = state.shape[:2]
+        
+        # Process each agent's state and action separately
+        state_out = F.relu(self.state_fc(state))  # (batch, num_agents, 64)
+        action_out = F.relu(self.action_fc(action))  # (batch, num_agents, 64)
+        
+        x = torch.cat((state_out, action_out), dim=1)  # (batch, num_agents, 128)
+
+        x = x.view(state_out.shape[0], 1, -1)
+        
+        # Fully connected layers
+        x = F.relu(self.dense_2(x))
+        x = F.relu(self.dense_3(x))
+        x = F.relu(self.dense_4(x))
+        x = self.dense_5(x)
+        
+        return x
+
+
+
+class N_net_noState(nn.Module):
+    def __init__(self, state_dim, action_dim, size_out, backward):
+        super(N_net_noState, self).__init__()
+        self.backward = backward
+        
+        # Separate input layers per agent
+        self.state_fc = nn.Linear(state_dim[-1], 64)  # Encode state
+        self.action_fc = nn.Linear(action_dim[-1], 64)  # Encode action
+        
+        # Fully connected layers after aggregation
+        self.dense_2 = nn.Linear(action_dim[0] * 64 + 64, 128)
+        self.dense_3 = nn.Linear(128, 128)
+        self.dense_4 = nn.Linear(128, 20)
+        self.dense_5 = nn.Linear(20, size_out)
+
+    def forward(self, state, action):
+        
+        # state, action shape: (batch, num_agents, state_dim/action_dim)
+        batch_size, num_agents = state.shape[:2]
+        
+        # Process each agent's state and action separately
+        state_out = F.relu(self.state_fc(state))  # (batch, num_agents, 64)
+        action_out = F.relu(self.action_fc(action))  # (batch, num_agents, 64)
+        
+        x = torch.cat((state_out, action_out), dim=1)  # (batch, num_agents, 128)
+
+        x = x.view(state_out.shape[0], 1, -1)
         
         # Fully connected layers
         x = F.relu(self.dense_2(x))
@@ -649,6 +802,8 @@ class UNCERTAINTY_predictor(object):
         # Load the dataset from the corresponding .pkl file
         if mode == "decentralized" or jlnet == 2:
             full_dataset = PKLDataset(dataset_path)
+        elif jlnet == 3:
+            full_dataset = PKLDataset(dataset_path, 'jlg3')
         elif mode == 'centralized':
             full_dataset = PKLDataset(dataset_path, 'central')
         else:
@@ -685,6 +840,12 @@ class UNCERTAINTY_predictor(object):
                     state = state.to(self.DEVICE, non_blocking=True)
                     pred_state = pred_state.to(self.DEVICE, non_blocking=True)
                     y_true = y_true.to(self.DEVICE, non_blocking=True)
+                elif jlnet == 3:
+                    state, n_action, pred_state, y_true = data
+                    state = state.to(self.DEVICE, non_blocking=True)
+                    n_action = n_action.to(self.DEVICE, non_blocking=True)
+                    pred_state = pred_state.to(self.DEVICE, non_blocking=True)
+                    y_true = y_true.to(self.DEVICE, non_blocking=True)
                 else:
                     state, n_state, n_action, pred_state, y_true = data
                     state = state.to(self.DEVICE, non_blocking=True)
@@ -700,14 +861,20 @@ class UNCERTAINTY_predictor(object):
                 # Forward pass with separate inputs
                 if mode == "decentralized" or jlnet == 2 or mode == "centralized":
                     result = self.model(state, pred_state)
+                elif jlnet == 3:
+                    result = self.model(state, n_action, pred_state)
                 else:
                     result = self.model(state, n_state, n_action, pred_state)
         
                 y_pred, uncertainty = result[0], result[1]
 
                 # standard loss
-                if mode == "decentralized" or jlnet == 2:
+                if mode == "decentralized":
                     loss = self.criterion(y_pred.squeeze(1), y_true.squeeze().long())
+                elif jlnet == 2:
+                    loss = self.criterion(y_pred.permute(0, 2, 1), y_true.squeeze(-1).long())
+                elif jlnet == 3:
+                    loss = self.criterion(y_pred.permute(0, 2, 1), y_true.long())
                 elif mode == "centralized":
                     loss = self.criterion(y_pred.permute(0, 2, 1), y_true.squeeze(-1))
                 else:
@@ -754,6 +921,8 @@ class UNCERTAINTY_predictor(object):
         # Load the dataset from the corresponding .pkl file
         if mode == "decentralized" or jlnet == 2 or mode == "centralized":
             test_dataset = PKLDataset(dataset_path)
+        elif jlnet == 3:
+            test_dataset = PKLDataset(dataset_path, 'jlg3')
         else:
             test_dataset = PKLDataset(dataset_path, 'jlg')
         
@@ -773,6 +942,12 @@ class UNCERTAINTY_predictor(object):
                     state = state.to(self.DEVICE, non_blocking=True)
                     pred_state = pred_state.to(self.DEVICE, non_blocking=True)
                     y_true = y_true.to(self.DEVICE, non_blocking=True)
+                elif jlnet == 3:
+                    state, n_action, pred_state, y_true = data
+                    state = state.to(self.DEVICE, non_blocking=True)
+                    n_action = n_action.to(self.DEVICE, non_blocking=True)
+                    pred_state = pred_state.to(self.DEVICE, non_blocking=True)
+                    y_true = y_true.to(self.DEVICE, non_blocking=True)
                 else:
                     state, n_state, n_action, pred_state, y_true = data
                     state = state.to(self.DEVICE, non_blocking=True)
@@ -784,6 +959,8 @@ class UNCERTAINTY_predictor(object):
                 # Forward pass with separate inputs
                 if mode == "decentralized" or jlnet == 2 or mode == "centralized":
                     result = self.model(state, pred_state)
+                elif jlnet == 3:
+                    result = self.model(state, n_action, pred_state)
                 else:
                     result = self.model(state, n_state, n_action, pred_state)
         
@@ -791,8 +968,12 @@ class UNCERTAINTY_predictor(object):
 
                 # standard loss
                 # Forward pass with separate inputs
-                if mode == "decentralized" or jlnet == 2:
+                if mode == "decentralized":
                     loss = self.criterion(y_pred.squeeze(1), y_true.squeeze().long())
+                elif jlnet == 2:
+                    loss = self.criterion(y_pred.permute(0, 2, 1), y_true.squeeze(-1).long())
+                elif jlnet == 3:
+                    loss = self.criterion(y_pred.permute(0, 2, 1), y_true.long())
                 elif mode == "centralized":
                     loss = self.criterion(y_pred.permute(0, 2, 1), y_true.squeeze(-1).long())
                 else:
@@ -821,6 +1002,8 @@ class UNCERTAINTY_predictor(object):
     def make_model(self, mode):
         if mode == 'dec' or mode == 'wo_action':
             self.model = Dec_Inverse_N_net(self.ind_state_dim, self.pred_state_dim, self.out_dim, self.backward).float()
+        elif mode == 'wo_state':
+            self.model = Inverse_N_Net_No_State(self.ind_state_dim, self.action_dim, self.pred_state_dim, self.out_dim, self.backward).float()
         elif mode == 'central':
             self.model = Central_Inverse_N_net(self.ind_state_dim, self.pred_state_dim, self.out_dim, self.backward).float()
         else:
@@ -933,6 +1116,61 @@ class Dec_Inverse_N_net(nn.Module):
         u = K / torch.sum(alpha, dim=1, keepdim=True)  # uncertainty
 
         return logits, u
+
+
+
+class Inverse_N_Net_No_State(nn.Module):
+    def __init__(self, ind_state_dim, n_action_dim, pred_state_dim, size_out, backward):
+        super(Inverse_N_Net_No_State, self).__init__()
+        self.backward = backward
+
+        # Separate encoders for each input
+        self.state_encoder = nn.Linear(ind_state_dim[-1], 128)
+        self.pred_state_encoder = nn.Linear(pred_state_dim[-1], 128)
+        self.n_action_encoder = nn.Linear(n_action_dim[-1], 128)
+
+        # Encode concatenated neighbor states and actions
+        self.state_predAction = nn.Linear(128, 128)
+    
+        self.dense_1 = nn.Linear(256 + 128 * n_action_dim[0], 128)
+        self.dense_2 = nn.Linear(128, 128)
+        self.dense_3 = nn.Linear(128, 20)
+
+        # EDL Layer
+        self.EDL_layer = nn.Linear(20, size_out)
+
+    def forward(self, state, n_action, pred_state):
+        # Encode individual state and predicted state
+        state_out = F.relu(self.state_encoder(state))
+        pred_state_out = F.relu(self.pred_state_encoder(pred_state))
+    
+        # Encode each neighbor's action separately
+        n_action_out = F.relu(self.n_action_encoder(n_action))
+    
+        # Concatenate along dimension 1 (feature dimension)
+        x = F.relu(self.state_predAction(torch.cat((n_action_out, pred_state_out), dim=1)))
+        
+        x = x.view(pred_state_out.shape[0], 1, -1)
+
+        x = torch.cat((x, state_out), dim=-1)
+
+        # Forward pass
+        x = F.relu(self.dense_1(x))
+        x = F.relu(self.dense_2(x))
+        x = F.relu(self.dense_3(x))
+
+        logits = self.EDL_layer(x)
+        
+        # Generate evidence
+        evidence = F.relu(logits)
+
+        K = 8
+        alpha = evidence + 1
+        
+        u = K / torch.sum(alpha, dim=1, keepdim=True)  # uncertainty
+
+        return logits, u
+
 
 
 class Central_Inverse_N_net(nn.Module):

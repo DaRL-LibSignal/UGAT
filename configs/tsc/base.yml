@@ -39,7 +39,7 @@ trainer:
   training_iterations: 1
   last_n_uncertainties: 2
   prob_grounding: 0
-  network_version: 0 # 2 for network version 2, any other number for network version 1
+  network_version: 0 # 2 for inverse without neighbor actions, 
   load_pretrained: True
 
 model:
