@@ -32,14 +32,14 @@ trainer:
   test_when_train: True
   gat: True
   gattype: "jlgat"
-  uncertainty: False
+  uncertainty: True
   delayedgat: False
   grounding_pattern: False
   ground_original: False
   training_iterations: 1
   last_n_uncertainties: 2
   prob_grounding: 0
-  network_version: 0 # 2 for inverse without neighbor actions, 
+  network_version: 0 # 2 for inverse without neighbor actions
   load_pretrained: True
 
 model:

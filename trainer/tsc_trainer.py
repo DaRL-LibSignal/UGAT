@@ -688,6 +688,21 @@ class TSCTrainer(BaseTrainer):
                                                     grounded_action_count += 1
         
                                                     ga_by_agent[idx] += 1
+                                                    
+                                        else:
+                                                            
+                                            # If none of the above settings, run the traditional UGAT approach
+                                            if uncertainty < self.avg_agent_uncertainties[idx]:
+                                
+                                                if self.network_version == 2:
+                                                    actions[idx] = torch.argmax(grounded_action.view(1, 8), dim=1).cpu().item()
+                                                else:
+                                                    actions[idx] = torch.argmax(grounded_action, dim=1).cpu().item()
+                                                        
+                                                grounded_actions[idx] = actions[idx]
+                                                grounded_action_count += 1
+        
+                                                ga_by_agent[idx] += 1
 
 
                                     # Use grounding pattern without uncertainty
